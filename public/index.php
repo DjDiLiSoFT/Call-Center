@@ -38,31 +38,9 @@ $app->route('dashboard', function (array $get, array $post) use ($app, $db, $ops
 
 $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): string {
     $period = Period::fromRequest($get, time());
-    $queues = [];
-    foreach ($db->query('SELECT queue, name FROM queues ORDER BY queue')->fetchAll(PDO::FETCH_ASSOC) as $q) {
-        $queues[(string) $q['queue']] = (string) $q['name'];
-    }
-    $queue = isset($get['queue']) && is_string($get['queue']) && isset($queues[$get['queue']]) ? $get['queue'] : '';
-    $operators = [];
-    foreach ($ops->all() as $o) {
-        $operators[(string) $o['extension']] = $ops->displayName((string) $o['extension']);
-    }
-    $selected = [];
-    if (isset($get['ext']) && is_array($get['ext'])) {
-        foreach ($get['ext'] as $e) {
-            if (is_string($e) && isset($operators[$e])) {
-                $selected[] = $e;
-            }
-        }
-    }
-    $report = (new OperatorStatsReport($db, $ops))->fetch($period, $queue !== '' ? $queue : null, $selected);
     return $app->view()->render('stats', [
         'period' => $period,
-        'report' => $report,
-        'queues' => $queues,
-        'operators' => $operators,
-        'queue' => $queue,
-        'selected' => $selected,
+        'report' => (new OperatorStatsReport($db, $ops))->fetch($period, null, []),
     ]);
 });
 

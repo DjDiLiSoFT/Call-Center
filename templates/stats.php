@@ -5,10 +5,6 @@ use CallStats\Web\View;
 
 /** @var \CallStats\Report\Period $period */
 /** @var array $report */
-/** @var array $queues queue => name */
-/** @var array $operators extension => display name */
-/** @var string $queue */
-/** @var string[] $selected */
 $tl = $report['hasTimeline'];
 $dur = function ($sec) {
     return Format::durationOrDash($sec);
@@ -33,25 +29,10 @@ $reasonTitle = function (array $r) {
 <form method="get" action="" class="filters card">
   <input type="hidden" name="p" value="stats">
 <?= $this->render('_period_fields', ['period' => $period]) ?>
-  <label>Очередь
-    <select name="queue">
-      <option value="">Все очереди</option>
-<?php foreach ($queues as $q => $name): ?>
-      <option value="<?= View::e($q) ?>"<?= (string) $q === $queue ? ' selected' : '' ?>><?= View::e($name !== '' ? $name . ' (' . $q . ')' : $q) ?></option>
-<?php endforeach; ?>
-    </select>
-  </label>
-  <label>Операторы <span class="muted">(пусто — все)</span>
-    <select name="ext[]" multiple size="4">
-<?php foreach ($operators as $ext => $name): ?>
-      <option value="<?= View::e($ext) ?>"<?= in_array((string) $ext, $selected, true) ? ' selected' : '' ?>><?= View::e($ext . ($name !== (string) $ext ? ' — ' . $name : '')) ?></option>
-<?php endforeach; ?>
-    </select>
-  </label>
   <button type="submit" class="primary">Показать</button>
 </form>
 
-<p class="muted">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?></p>
+<p class="muted" data-autorefresh="60">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?>. Страница обновляется сама раз в минуту.</p>
 <?php if ($report['hasApprox']): ?>
 <p class="notice">часть данных за выбранный период приблизительная</p>
 <?php endif; ?>

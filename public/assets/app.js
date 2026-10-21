@@ -40,8 +40,10 @@
   var preset = document.querySelector('select[data-preset]');
   if (preset) {
     Array.prototype.forEach.call(document.querySelectorAll('input[data-custom]'), function (d) {
-      d.addEventListener('change', function () { preset.value = 'custom'; });
+      d.addEventListener('change', function () { preset.value = 'custom'; preset.form.submit(); });
     });
+    // Choosing a preset applies it at once; "Свой период" waits for the dates.
+    preset.addEventListener('change', function () { if (preset.value !== 'custom') { preset.form.submit(); } });
   }
 })();
 
