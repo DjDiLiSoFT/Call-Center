@@ -291,6 +291,10 @@ class CallBuilderTest extends TestCase
         $this->assertSame('1000', $call->queue);
         $this->assertSame('1004', $call->answeredBy);
         $this->assertSame(30, $call->talkSec);
+        // Answer time comes from the phone leg (33 s, billsec 30), not the ext-queues row (33/33).
+        $this->assertSame('2026-10-18 15:59:23', $call->answeredAt);
+        $this->assertSame(3, $call->waitSec);
+        $this->assertSame('2026-10-18 15:59:23', $this->byExt($call)['1004/in']->answeredAt);
         $this->assertSame('900000001', $call->clientNumber);
         $this->assertSame('q-1000-900000001-20261018-155920-1792321160.222942.wav', $call->recordingFile);
         $this->assertSame([
@@ -325,6 +329,23 @@ class CallBuilderTest extends TestCase
         $a = $this->byExt($call)['1001/in'];
         $this->assertSame(5, $a->ringSec);
         $this->assertSame(20, $a->talkSec);
+    }
+
+    public function test_direct_short_ring_unanswered_is_caller_hangup(): void
+    {
+        // Caller hung up after 7 s, before the 20 s direct ring timeout: not a miss (spec 5.3).
+        $rows = $this->rows([
+            ['2026-10-20 12:10:00', '900000011', '1001', 'ext-local', 'PJSIP/552020515-00009a20', 'PJSIP/1001-00009a21', 7, 0, 'NO ANSWER', '1792498200.300020', '', '1792498200.300020', 300020],
+        ]);
+        $call = $this->builder->build('1792498200.300020', $rows, []);
+
+        $this->assertSame('direct', $call->kind);
+        $this->assertNull($call->answeredBy);
+        $this->assertSame(['1001/in' => 'caller_hangup'], $this->outcomes($call));
+        $this->assertSame(7, $this->byExt($call)['1001/in']->ringSec);
+
+        $call = (new CallBuilder(new AgentResolver(['1001']), 15, 5))->build('1792498200.300020', $rows, []);
+        $this->assertSame(['1001/in' => 'missed'], $this->outcomes($call), 'direct timeout is configurable');
     }
 
     public function test_direct_inbound_missed(): void

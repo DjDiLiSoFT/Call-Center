@@ -17,15 +17,20 @@ class CallBuilder
     private $resolver;
     /** @var AttemptCollector */
     private $collector;
+    /** @var int */
+    private $directRingTimeoutSec;
 
     /**
-     * @param int $ringTimeoutSec queue member ring timeout; used only for queue calls without
-     *                            queue_log to tell a full ring-out from a cut-short leg
+     * @param int $ringTimeoutSec       queue member ring timeout; used only for queue calls without
+     *                                  queue_log to tell a full ring-out from a cut-short leg
+     * @param int $directRingTimeoutSec ring timeout of direct/internal calls: an unanswered leg
+     *                                  shorter than this is 'caller hung up', not a miss
      */
-    public function __construct(AgentResolver $r, int $ringTimeoutSec = 15)
+    public function __construct(AgentResolver $r, int $ringTimeoutSec = 15, int $directRingTimeoutSec = 20)
     {
         $this->resolver = $r;
         $this->collector = new AttemptCollector($r, $ringTimeoutSec);
+        $this->directRingTimeoutSec = $directRingTimeoutSec;
     }
 
     /**
@@ -92,8 +97,12 @@ class CallBuilder
             if ($a['answered'] && $leg !== null && $leg['answered']) {
                 // The leg to the phone knows the real ring time and talk time of the answerer.
                 $a['answerRing'] = $leg['answerRing'];
-                $a['answeredAt'] = $a['answeredAt'] ?? $leg['answeredAt'];
-                if (!isset($q['agents'][$ext]) || $a['talk'] === null) {
+                if (!isset($q['agents'][$ext])) {
+                    // Not from queue_log: the ext-queues row has duration == billsec, so only the
+                    // phone leg knows when the operator actually picked up and how long they talked.
+                    $a['answeredAt'] = $leg['answeredAt'];
+                    $a['talk'] = $leg['talk'];
+                } elseif ($a['talk'] === null) {
                     $a['talk'] = $leg['talk']; // queue_log COMPLETE* wins when present
                 }
             }
@@ -144,7 +153,7 @@ class CallBuilder
         $legRows = array_filter($rows, function (array $r) {
             return $r['dcontext'] === 'ext-local' && $this->collector->phoneOf($r['dstchannel']) !== null;
         });
-        $agents = $this->collector->fromLegs($legRows, 'dstchannel');
+        $agents = $this->collector->fromLegs($legRows, 'dstchannel', $this->directRingTimeoutSec);
         if ($callerExt !== null) {
             unset($agents[$callerExt]);
         }

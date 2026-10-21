@@ -180,9 +180,12 @@ class AttemptCollector
      * Attempts from `ext-local` legs to operator phones (direct/internal calls, and the
      * Local/…@from-queue legs of queue calls). $column names the column holding the operator.
      *
+     * @param int|null $ringTimeoutSec when given (direct/internal calls), an unanswered leg shorter
+     *                                 than this was cut short by the caller ('canceled'); when null
+     *                                 (queue legs) any leg with duration > 0 counts as 'rang'
      * @return array<string,array>
      */
-    public function fromLegs(array $rows, string $column): array
+    public function fromLegs(array $rows, string $column, ?int $ringTimeoutSec = null): array
     {
         $agents = [];
         foreach ($rows as $r) {
@@ -201,7 +204,8 @@ class AttemptCollector
                 $this->answer($agents[$ext], $t, $duration, $billsec);
             } elseif ($duration > 0) {
                 // NO ANSWER / BUSY (and ANSWERED with billsec 0): the phone rang.
-                $this->addKind($agents[$ext], 'rang');
+                $full = $ringTimeoutSec === null || $duration >= $ringTimeoutSec;
+                $this->addKind($agents[$ext], $full ? 'rang' : 'canceled');
                 $agents[$ext]['ringMs'] += $duration * 1000;
             } else {
                 $this->addKind($agents[$ext], 'canceled');
