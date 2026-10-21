@@ -1,0 +1,9 @@
+CREATE TABLE `users` (
+  `extension` VARCHAR(20) NOT NULL DEFAULT '',
+  `name` VARCHAR(80) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `queues_config` (
+  `extension` VARCHAR(20) NOT NULL DEFAULT '',
+  `descr` VARCHAR(35) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
