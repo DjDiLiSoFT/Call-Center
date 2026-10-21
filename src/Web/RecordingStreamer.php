@@ -14,9 +14,14 @@ class RecordingStreamer
     /** @var callable fn(string $headerLine): void; status goes as "HTTP/1.1 206 Partial Content" */
     private $header;
 
-    public function __construct(callable $header)
+    /** @var bool */
+    private $dropBuffers;
+
+    /** @param bool $dropBuffers close output buffers / compression before streaming (off only in tests) */
+    public function __construct(callable $header, bool $dropBuffers = true)
     {
         $this->header = $header;
+        $this->dropBuffers = $dropBuffers;
     }
 
     public function send(string $path, string $mime, ?string $rangeHeader, bool $download): void
@@ -48,6 +53,14 @@ class RecordingStreamer
             }
         }
 
+        if ($this->dropBuffers) {
+            // A buffer or gzip layer would hold the whole file in memory and break Content-Length.
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            @ini_set('zlib.output_compression', '0');
+        }
+
         $length = $end - $start + 1;
         $name = str_replace(['"', "\r", "\n", '\\'], '_', basename($path));
         $this->h($partial ? 'HTTP/1.1 206 Partial Content' : 'HTTP/1.1 200 OK');
@@ -69,6 +82,9 @@ class RecordingStreamer
                     break;
                 }
                 echo $buf;
+                if ($this->dropBuffers) {
+                    flush();
+                }
                 $left -= strlen($buf);
                 if (connection_aborted()) {
                     break;

@@ -32,7 +32,7 @@ class RecordingStreamerTest extends TestCase
     {
         $s = new RecordingStreamer(function (string $h): void {
             $this->headers[] = $h;
-        });
+        }, false);
         ob_start();
         $s->send($this->file, 'audio/wav', $range, $dl);
         return (string) ob_get_clean();
