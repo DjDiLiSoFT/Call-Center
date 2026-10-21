@@ -46,7 +46,7 @@ $sourcesBlock = function (?string $json) {
 $arrows = ['in' => '←', 'out' => '→', 'internal' => '⇄'];
 $arrowTitles = ['in' => 'входящий', 'out' => 'исходящий', 'internal' => 'внутренний'];
 ?>
-<form method="get" action="" class="filters card">
+<form method="get" action="" class="filters card compact">
   <input type="hidden" name="p" value="journal">
   <label>Оператор
     <select name="ext">

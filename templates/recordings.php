@@ -27,7 +27,7 @@ $sortLink = function (string $col, string $label) use ($t, $url): string {
 $arrows = ['queue' => '←', 'direct' => '←', 'outbound' => '→', 'internal' => '⇄'];
 $dirTitle = ['queue' => 'входящий', 'direct' => 'входящий', 'outbound' => 'исходящий', 'internal' => 'внутренний'];
 ?>
-<form method="get" action="" class="filters card">
+<form method="get" action="" class="filters card compact">
   <input type="hidden" name="p" value="recordings">
   <input type="hidden" name="number" value="<?= View::e($f['number']) ?>">
   <label>Оператор

@@ -57,7 +57,7 @@ $legend = function (array $parts): string {
     return $h . '</ul>';
 };
 ?>
-<form method="get" class="card filters">
+<form method="get" class="filters card compact">
   <input type="hidden" name="p" value="dashboard">
 <?= $this->render('_period_fields', ['period' => $period]) ?>
   <button type="submit" class="primary">Показать</button>
