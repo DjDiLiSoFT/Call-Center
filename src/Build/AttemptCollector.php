@@ -69,7 +69,10 @@ class AttemptCollector
                     $ext = $this->agentOf($e->agent);
                     $ms = (int) ($d[0] ?? 0);
                     if ($e->event === 'RINGCANCELED') {
-                        $kind = isset($failedOnly[$ext]) ? 'offline' : 'canceled';
+                        // A cancel within ~0 ms (new round started as the caller hung up) is a
+                        // blip: it only counts when the operator has no other attempt.
+                        $kind = isset($failedOnly[$ext]) ? 'offline'
+                            : ($ms <= self::OFFLINE_MAX_RING_MS ? 'blip' : 'canceled');
                     } else {
                         $kind = $ms > self::OFFLINE_MAX_RING_MS ? 'rang' : 'offline';
                     }
@@ -129,6 +132,7 @@ class AttemptCollector
                     break;
             }
         }
+        $this->settleBlips($agents);
         return [
             'agents' => $agents,
             'connectedBy' => $connectedBy,
@@ -162,10 +166,12 @@ class AttemptCollector
             } else {
                 // NO ANSWER / BUSY: a leg shorter than the member ring timeout was cut short
                 // (caller hung up or a colleague answered); a full-length leg really rang out.
-                $this->addKind($agents[$ext], $duration >= $this->ringTimeoutSec ? 'rang' : 'canceled');
+                // A 0 s leg never reached the phone: a blip, see settleBlips().
+                $this->addKind($agents[$ext], $duration >= $this->ringTimeoutSec ? 'rang' : ($duration > 0 ? 'canceled' : 'blip'));
                 $agents[$ext]['ringMs'] += $duration * 1000;
             }
         }
+        $this->settleBlips($agents);
         return $agents;
     }
 
@@ -245,6 +251,21 @@ class AttemptCollector
             ];
         } elseif ($at < $agents[$ext]['first']) {
             $agents[$ext]['first'] = $at;
+        }
+    }
+
+    /**
+     * A 'blip' (cancel after ~0 ms, 0 s leg) is not a ring: it is dropped when the operator has
+     * any other attempt in the call, and becomes 'canceled' (caller hung up) when it is the only one.
+     */
+    private function settleBlips(array &$agents): void
+    {
+        foreach ($agents as $ext => $a) {
+            $kinds = array_values(array_diff($a['kinds'], ['blip']));
+            if ($kinds === [] && in_array('blip', $a['kinds'], true)) {
+                $kinds = ['canceled'];
+            }
+            $agents[$ext]['kinds'] = $kinds;
         }
     }
 

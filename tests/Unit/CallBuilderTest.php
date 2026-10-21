@@ -130,6 +130,51 @@ class CallBuilderTest extends TestCase
         ], $this->outcomes($call));
     }
 
+    public function test_queue_blip_cancel_does_not_override_offline_rounds(): void
+    {
+        // Real sample pattern: offline 1005 (RINGNOANSWER|0 every round); the caller abandons
+        // exactly when a new ringall round starts, so every member logs RINGCANCELED|35 and its
+        // leg is NO ANSWER with duration 0. The phone never rang: still offline, not caller_hangup.
+        // 1001 rang for real in round 1: missed. 1002 had only the 35 ms blip: caller_hangup.
+        $rows = $this->rows([
+            $this->queueLeg('1005', 0, 'FAILED', 1),
+            $this->queueLeg('1001', 15, 'NO ANSWER', 2),
+            $this->queueLeg('1005', 0, 'NO ANSWER', 3),
+            $this->queueLeg('1001', 0, 'NO ANSWER', 4),
+            $this->queueLeg('1002', 0, 'NO ANSWER', 5),
+        ]);
+        $events = $this->events([
+            '1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1',
+            '1792570000|1792570000.1|1000|1005|RINGNOANSWER|0',
+            '1792570015|1792570000.1|1000|1001|RINGNOANSWER|15000',
+            '1792570020|1792570000.1|1000|1005|RINGCANCELED|35',
+            '1792570020|1792570000.1|1000|1001|RINGCANCELED|35',
+            '1792570020|1792570000.1|1000|1002|RINGCANCELED|35',
+            '1792570020|1792570000.1|1000|NONE|ABANDON|1|1|20',
+        ]);
+        $call = $this->builder->build('1792570000.1', $rows, $events);
+
+        $this->assertSame([
+            '1001/in' => 'missed',
+            '1002/in' => 'caller_hangup',
+            '1005/in' => 'offline',
+        ], $this->outcomes($call));
+        $this->assertSame(15, $this->byExt($call)['1001/in']->ringSec);
+    }
+
+    public function test_approx_zero_second_leg_does_not_override_offline(): void
+    {
+        // No queue_log: 1005 FAILED in round 1, then a 0 s NO ANSWER leg when the caller hung up
+        // at the start of round 2 -> offline. 1002 with only a 0 s leg stays caller_hangup.
+        $rows = $this->rows([
+            $this->queueLeg('1005', 0, 'FAILED', 1),
+            $this->queueLeg('1005', 0, 'NO ANSWER', 2),
+            $this->queueLeg('1002', 0, 'NO ANSWER', 3),
+        ]);
+        $call = $this->builder->build('1792570000.1', $rows, []);
+        $this->assertSame(['1002/in' => 'caller_hangup', '1005/in' => 'offline'], $this->outcomes($call));
+    }
+
     public function test_approx_short_leg_on_unanswered_call_is_caller_hangup(): void
     {
         // No queue_log: leg shorter than the 15 s ring timeout = caller hung up while ringing.

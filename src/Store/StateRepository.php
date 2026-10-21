@@ -27,4 +27,9 @@ class StateRepository
         $st = $this->db->prepare('INSERT INTO collector_state (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)');
         $st->execute([$k, $v]);
     }
+
+    public function remove(string $k): void
+    {
+        $this->db->prepare('DELETE FROM collector_state WHERE k = ?')->execute([$k]);
+    }
 }

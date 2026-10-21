@@ -10,5 +10,5 @@ return [
     ],
     'queue_log' => ['path' => '/var/log/asterisk/queue_log'],
     'monitor'   => ['path' => '/var/spool/asterisk/monitor'],
-    'collector' => ['lookback_minutes' => 120],
+    'collector' => ['lookback_minutes' => 120, 'queue_ring_timeout' => 15, 'direct_ring_timeout' => 20],
 ];
