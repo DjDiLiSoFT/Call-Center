@@ -1,7 +1,11 @@
 <?php
 
+use CallStats\Build\AgentResolver;
 use CallStats\Db;
+use CallStats\Live\AmiClient;
+use CallStats\Live\LiveSnapshot;
 use CallStats\Report\OperatorJournal;
+use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
 use CallStats\Report\RecordingSearch;
@@ -163,6 +167,74 @@ $app->route('play', function (array $get, array $post) use ($db, $locator): stri
         header($line);
     }))->send($loc['path'], $loc['mime'] ?? 'application/octet-stream', $range, $download);
     return '';
+});
+
+$app->route('live', function (array $get, array $post) use ($app, $config): string {
+    return $app->view()->render('live', [
+        'refreshSec' => max(2, (int) $config->get('live.refresh_sec', 3)),
+        'slSec' => (int) $config->get('live.service_level_sec', 60),
+    ]);
+});
+
+// Raw response: JSON for the live board (polled by assets/live.js).
+$app->route('live_data', function (array $get, array $post) use ($config, $db, $ops): string {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close(); // polling must not block other pages
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    $names = [];
+    foreach ($ops->all() as $o) {
+        $names[(string) $o['extension']] = $ops->displayName((string) $o['extension']);
+    }
+    $queueNames = [];
+    foreach ($db->query('SELECT queue, name FROM queues')->fetchAll(PDO::FETCH_ASSOC) as $q) {
+        $queueNames[(string) $q['queue']] = (string) $q['name'];
+    }
+    $now = time();
+    $out = [
+        'ok' => true,
+        'error' => null,
+        'time' => date('H:i:s', $now),
+        'today' => (new TodayStats($db))->fetch(
+            date('Y-m-d 00:00:00', $now),
+            date('Y-m-d 23:59:59', $now),
+            (int) $config->get('live.service_level_sec', 60)
+        ),
+        'summary' => null,
+        'queues' => [],
+        'agents' => [],
+    ];
+    try {
+        $user = (string) $config->get('ami.user', '');
+        if ($user === '') {
+            throw new RuntimeException('AMI не настроен (ami.user в config.php)');
+        }
+        $ami = new AmiClient(
+            (string) $config->get('ami.host', '127.0.0.1'),
+            (int) $config->get('ami.port', 5038),
+            $user,
+            (string) $config->get('ami.secret', ''),
+            3.0
+        );
+        $ami->connect();
+        try {
+            $queue = $ami->request('QueueStatus');
+            $channels = $ami->request('CoreShowChannels');
+            $hints = $ami->request('ExtensionStateList');
+        } finally {
+            $ami->close();
+        }
+        $snap = (new LiveSnapshot(new AgentResolver(array_keys($names))))
+            ->build($queue, $channels, $hints, $names, $queueNames);
+        $out['summary'] = $snap['summary'];
+        $out['queues'] = $snap['queues'];
+        $out['agents'] = $snap['agents'];
+    } catch (Throwable $e) {
+        error_log('callstats live: ' . $e->getMessage());
+        $out['ok'] = false;
+        $out['error'] = 'Нет связи с Asterisk: ' . $e->getMessage();
+    }
+    return (string) json_encode($out, JSON_UNESCAPED_UNICODE);
 });
 
 $app->route('operators', function (array $get, array $post) use ($app, $ops): string {

@@ -111,3 +111,33 @@ body.has-player main { padding-bottom: 6rem; }
 .player-vol { display: flex; align-items: center; gap: .3rem; margin: 0; }
 .player-vol input { width: 80px; }
 .player-error { color: var(--danger); }
+
+/* Live board */
+.live-status { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
+.live-fs { border: 1px solid var(--border); background: var(--surface); border-radius: 4px; padding: .35rem .8rem; font: inherit; cursor: pointer; }
+.live-h { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 .5rem; color: #3e4c59; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 6px; padding: .75rem 1rem; display: flex; flex-direction: column; }
+.tile-v { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile-l { color: var(--muted); font-size: .85rem; }
+.tile-wait { border-left-color: #d97706; }
+.tile-free { border-left-color: #16a34a; }
+.tile-talk { border-left-color: var(--accent); }
+.tile-pause { border-left-color: #9333ea; }
+.tile-off { border-left-color: #9aa5b1; }
+.live.alarm .tile-wait { background: #fff4e5; }
+.live-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 1.25rem; }
+@media (max-width: 900px) { .live-cols { grid-template-columns: 1fr; } }
+.live-table tr.late td { color: var(--danger); font-weight: 600; }
+.live-table tr.st-offline td { color: var(--muted); }
+.badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .85rem; font-weight: 600; }
+.b-talking { background: #dbeafe; color: #1e40af; }
+.b-ringing { background: #fef3c7; color: #92400e; }
+.b-busy { background: #e0e7ff; color: #3730a3; }
+.b-free { background: #dcfce7; color: #166534; }
+.b-paused { background: #f3e8ff; color: #6b21a8; }
+.b-offline { background: #eef0f3; color: #6b7785; }
+.live-note { margin-top: 1rem; font-size: .85rem; }
+.live:fullscreen { background: var(--bg); padding: 1.5rem 2rem; overflow: auto; }
+.live:fullscreen .tile-v { font-size: 2.6rem; }
+.live:fullscreen .live-table { font-size: 1.1rem; }

@@ -9,10 +9,14 @@ class App
 {
     private const MENU = [
         'stats' => 'Статистика',
+        'live' => 'Онлайн',
         'journal' => 'Журнал',
         'recordings' => 'Записи',
         'operators' => 'Операторы',
     ];
+
+    /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
+    private const RAW = ['play', 'live_data'];
 
     /** @var Config */
     private $config;
@@ -35,9 +39,9 @@ class App
     }
 
     /**
-     * Registers a page handler. For stats/journal/recordings/operators it returns the HTML of the
-     * page body (rendered inside the layout); for play it returns the full response body and may
-     * send its own headers.
+     * Registers a page handler. For menu pages it returns the HTML of the page body (rendered
+     * inside the layout); for RAW routes (play, live_data) it returns the full response body and
+     * may send its own headers.
      */
     public function route(string $page, callable $handler): self
     {
@@ -89,7 +93,7 @@ class App
         }
 
         if (!$this->auth->check()) {
-            if ($page === 'play') {
+            if (in_array($page, self::RAW, true)) {
                 $this->fail(403, 'Доступ запрещён');
             } else {
                 $this->redirect('?p=login');
@@ -115,8 +119,8 @@ class App
             return;
         }
 
-        if ($page === 'play' && isset($this->routes['play'])) {
-            echo (string) call_user_func($this->routes['play'], $get, $post);
+        if (in_array($page, self::RAW, true) && isset($this->routes[$page])) {
+            echo (string) call_user_func($this->routes[$page], $get, $post);
             return;
         }
 

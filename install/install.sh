@@ -114,6 +114,29 @@ else
     chmod 640 "$APP/config/config.php"
 fi
 
+# 2b. AMI access for the «Онлайн» page: FreePBX's own manager user (read-only use: QueueStatus,
+# CoreShowChannels, ExtensionStateList). Filled in only when config.php has no ami.user yet.
+CFG="$APP/config/config.php"
+if ! CS_CFG="$CFG" "$PHP" -r '$c = require getenv("CS_CFG"); exit(empty($c["ami"]["user"]) ? 1 : 0);'; then
+    AMI_USER=$(mysql_root -N -B -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRUSER'" 2>/dev/null || true)
+    AMI_PASS=$(mysql_root -N -B -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRPASS'" 2>/dev/null || true)
+    if [ -n "$AMI_USER" ] && [ -n "$AMI_PASS" ]; then
+        say "Подключение страницы «Онлайн» к Asterisk (AMI, пользователь $AMI_USER)"
+        CFG_TMP="$CFG.tmp"
+        install -m 640 -o root -g "$APP_USER" "$CFG" "$CFG_TMP"
+        CS_CFG="$CFG_TMP" CS_AU="$AMI_USER" CS_AP="$AMI_PASS" "$PHP" -r '
+            $c = require getenv("CS_CFG");
+            $c["ami"] = ["host" => "127.0.0.1", "port" => 5038, "user" => getenv("CS_AU"), "secret" => getenv("CS_AP")];
+            if (!isset($c["live"])) { $c["live"] = ["refresh_sec" => 3, "service_level_sec" => 60]; }
+            file_put_contents(getenv("CS_CFG"), "<?php\n\nreturn " . var_export($c, true) . ";\n");
+        ' || { rm -f "$CFG_TMP"; die "не удалось записать настройки AMI в config.php"; }
+        mv -f "$CFG_TMP" "$CFG" || die "не удалось записать config.php"
+    else
+        say "ВНИМАНИЕ: не нашёл AMPMGRUSER/AMPMGRPASS в настройках FreePBX — страница «Онлайн» не заработает, пока не впишете ami.user/ami.secret в $CFG (README, раздел «Онлайн»)"
+    fi
+    unset AMI_USER AMI_PASS
+fi
+
 # 3. Schema (CREATE TABLE IF NOT EXISTS).
 say "Применение схемы базы данных"
 CFG="$APP/config/config.php"
