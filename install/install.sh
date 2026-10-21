@@ -95,14 +95,18 @@ FLUSH PRIVILEGES;"
     printf '%s\n' "$SQL" | mysql_root || die "не удалось создать базу и пользователей"
 
     CFG="$APP/config/config.php"
-    install -m 640 -o root -g "$APP_USER" "$APP/config/config.sample.php" "$CFG"
-    CS_RW="$PASS_RW" CS_RO="$PASS_RO" CS_CFG="$CFG" "$PHP" -r '
+    # Patch a temp copy and move it into place, so a failure never leaves a half-made config.php.
+    CFG_TMP="$CFG.tmp"
+    rm -f "$CFG_TMP"
+    install -m 640 -o root -g "$APP_USER" "$APP/config/config.sample.php" "$CFG_TMP"
+    CS_RW="$PASS_RW" CS_RO="$PASS_RO" CS_CFG="$CFG_TMP" "$PHP" -r '
         $c = require getenv("CS_CFG");
         $c["db"]["callstats"]["pass"] = getenv("CS_RW");
         $c["db"]["source"]["pass"]    = getenv("CS_RO");
         $c["db"]["fpbx"]["pass"]      = getenv("CS_RO");
         file_put_contents(getenv("CS_CFG"), "<?php\n\nreturn " . var_export($c, true) . ";\n");
-    ' || die "не удалось записать config.php"
+    ' || { rm -f "$CFG_TMP"; die "не удалось записать config.php"; }
+    mv -f "$CFG_TMP" "$CFG" || die "не удалось записать config.php"
     unset PASS_RW PASS_RO SQL
 else
     say "config/config.php уже есть, он сохранён без изменений"
