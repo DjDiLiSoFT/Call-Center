@@ -1,3 +1,13 @@
 samples/
 *.tgz
 .superpowers/
+tools/php/
+tools/mariadb/
+tools/mariadb-data/
+tools/composer.phar
+vendor/
+config/config.php
+dist/
+tools/_dl/
+tools/mariadb.log
+.phpunit.result.cache
