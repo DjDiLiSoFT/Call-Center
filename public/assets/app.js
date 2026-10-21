@@ -157,3 +157,29 @@
     });
   }
 })();
+
+// Chart tooltips: any element with data-tip inside .dash shows it on hover.
+(function () {
+  var tip = document.getElementById('chart-tip');
+  if (!tip) { return; }
+  document.addEventListener('mousemove', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!t) { tip.hidden = true; return; }
+    tip.textContent = t.getAttribute('data-tip');
+    tip.hidden = false;
+    var x = e.clientX + 12, y = e.clientY + 14, w = tip.offsetWidth;
+    if (x + w > window.innerWidth - 8) { x = e.clientX - w - 12; }
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  });
+}());
+
+// Dashboard auto-refresh (only while the tab is visible).
+(function () {
+  var el = document.querySelector('[data-autorefresh]');
+  if (!el) { return; }
+  var ms = (parseInt(el.getAttribute('data-autorefresh'), 10) || 60) * 1000;
+  setInterval(function () {
+    if (document.visibilityState === 'visible') { window.location.reload(); }
+  }, ms);
+}());

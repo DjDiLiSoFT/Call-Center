@@ -8,6 +8,7 @@ use PDO;
 class App
 {
     private const MENU = [
+        'dashboard' => 'Дашборд',
         'stats' => 'Статистика',
         'live' => 'Онлайн',
         'journal' => 'Журнал',
@@ -77,7 +78,7 @@ class App
         header('Content-Type: text/html; charset=utf-8');
 
         $method = strtoupper((string) ($server['REQUEST_METHOD'] ?? 'GET'));
-        $page = isset($get['p']) && is_string($get['p']) ? $get['p'] : 'stats';
+        $page = isset($get['p']) && is_string($get['p']) ? $get['p'] : 'dashboard';
 
         if ($method === 'POST') {
             $token = isset($post['csrf']) && is_string($post['csrf']) ? $post['csrf'] : null;
@@ -130,7 +131,7 @@ class App
     private function login(string $method, array $post, array $server): void
     {
         if ($this->auth->check()) {
-            $this->redirect('?p=stats');
+            $this->redirect('?p=dashboard');
             return;
         }
         $error = '';
@@ -140,7 +141,7 @@ class App
             $pass = isset($post['password']) && is_string($post['password']) ? $post['password'] : '';
             $ip = (string) ($server['REMOTE_ADDR'] ?? '');
             if ($this->auth->attempt($user, $pass, $ip)) {
-                $this->redirect('?p=stats');
+                $this->redirect('?p=dashboard');
                 return;
             }
             $error = $this->auth->error();

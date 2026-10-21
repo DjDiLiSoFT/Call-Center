@@ -4,6 +4,7 @@ use CallStats\Build\AgentResolver;
 use CallStats\Db;
 use CallStats\Live\AmiClient;
 use CallStats\Live\LiveSnapshot;
+use CallStats\Report\DashboardReport;
 use CallStats\Report\OperatorJournal;
 use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
@@ -24,6 +25,15 @@ $db = Db::connect(
 
 $app = new App($config, $db);
 $ops = new OperatorRepository($db);
+
+$app->route('dashboard', function (array $get, array $post) use ($app, $db, $ops): string {
+    $now = time();
+    $period = Period::fromRequest($get, $now);
+    return $app->view()->render('dashboard', [
+        'period' => $period,
+        'd' => (new DashboardReport($db, $ops))->fetch($period, $now),
+    ]);
+});
 
 $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): string {
     $period = Period::fromRequest($get, time());
