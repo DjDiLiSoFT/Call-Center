@@ -5,7 +5,7 @@ use CallStats\Web\View;
 /** @var array[] $sections each: title, period, report, insights, prevLabel */
 /** @var bool $default true when no period was chosen (Сегодня + Вчера + 15 дней) */
 ?>
-<form method="get" action="" class="filters card">
+<form method="get" action="" class="filters card compact">
   <input type="hidden" name="p" value="stats">
 <?= $this->render('_period_fields', ['period' => $period]) ?>
   <button type="submit" class="primary">Показать</button>

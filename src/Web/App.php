@@ -16,6 +16,9 @@ class App
         'operators' => 'Операторы',
     ];
 
+    /** Menu pages shown without the big page heading (the menu already names them). */
+    private const NO_HEADING = ['stats'];
+
     /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
     private const RAW = ['play', 'live_data'];
 
@@ -161,6 +164,7 @@ class App
             'title' => $title,
             'content' => $content,
             'active' => $active,
+            'heading' => $menu && !in_array($active, self::NO_HEADING, true),
             'menu' => $menu ? self::MENU : [],
             'csrf' => $this->csrf->token(),
         ]);

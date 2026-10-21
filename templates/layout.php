@@ -23,7 +23,7 @@
 </header>
 <?php endif; ?>
 <main class="<?= $menu ? 'page' : 'page narrow' ?>">
-<?php if ($menu): ?>
+<?php if ($heading): ?>
 <h1><?= View::e($title) ?></h1>
 <?php endif; ?>
 <?= $content ?>
