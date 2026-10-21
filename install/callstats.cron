@@ -1,0 +1,2 @@
+# CallStats collector: every minute, as user asterisk. Output (errors) goes to the log.
+* * * * * asterisk /usr/bin/php /opt/callstats/bin/collect.php >> /var/log/callstats.log 2>&1
