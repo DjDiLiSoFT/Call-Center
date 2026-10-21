@@ -1,5 +1,4 @@
 <?php
-use CallStats\Report\Period;
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
@@ -10,7 +9,7 @@ use CallStats\Web\View;
 /** @var bool $hasTimeline */
 /** @var array[] $items journal items (offline runs already collapsed) */
 $dur = function ($sec) {
-    return $sec === null ? '—' : Format::duration((int) $sec);
+    return Format::durationOrDash($sec);
 };
 $hm = function (string $at) {
     return substr($at, 11, 5);
@@ -24,9 +23,6 @@ $minutes = function (?string $from, ?string $to) {
     }
     $sec = max(0, strtotime($to) - strtotime($from));
     return $sec < 60 ? $sec . ' с' : (int) round($sec / 60) . ' мин';
-};
-$pct = function ($v) {
-    return $v === null ? '—' : rtrim(rtrim(number_format($v, 1, ',', ''), '0'), ',') . '%';
 };
 $sourcesBlock = function (?string $json) {
     if ($json === null || $json === '') {
@@ -70,19 +66,7 @@ $query = function (string $e) use ($period) {
 <?php endforeach; ?>
     </select>
   </label>
-  <label>Период
-    <select name="preset" data-preset>
-<?php foreach (Period::PRESETS as $key => $label): ?>
-      <option value="<?= View::e($key) ?>"<?= $key === $period->preset ? ' selected' : '' ?>><?= View::e($label) ?></option>
-<?php endforeach; ?>
-    </select>
-  </label>
-  <label>С
-    <input type="date" name="from" value="<?= View::e($period->fromDate()) ?>" data-custom>
-  </label>
-  <label>По
-    <input type="date" name="to" value="<?= View::e($period->toDate()) ?>" data-custom>
-  </label>
+<?= $this->render('_period_fields', ['period' => $period]) ?>
   <button type="submit" class="primary">Показать</button>
 </form>
 
@@ -95,37 +79,11 @@ $query = function (string $e) use ($period) {
 <table>
   <thead>
     <tr>
-      <th>Оператор</th>
-      <th class="num">Принято</th>
-      <th class="num">Пропущено</th>
-      <th class="num">% ответа</th>
-      <th class="num">Не в сети</th>
-      <th class="num">Исходящие<br><span class="sub">состоялось / всего</span></th>
-      <th class="num">Время разговоров</th>
-      <th class="num">Средний разговор</th>
-      <th class="num">Ср. время до ответа</th>
-<?php if ($hasTimeline): ?>
-      <th class="num">Время в системе</th>
-      <th class="num">На паузе</th>
-<?php endif; ?>
-    </tr>
+<?= $this->render('_stats_head', ['tl' => $hasTimeline]) ?>    </tr>
   </thead>
   <tbody>
     <tr>
-      <td><?= View::e($summary['name']) ?><?= $summary['name'] !== (string) $summary['extension'] ? ' <span class="muted">' . View::e($summary['extension']) . '</span>' : '' ?></td>
-      <td class="num"><?= (int) $summary['answered'] ?></td>
-      <td class="num"><?= (int) $summary['missed'] ?></td>
-      <td class="num"><?= View::e($pct($summary['answer_pct'])) ?></td>
-      <td class="num"><?= (int) $summary['offline'] ?></td>
-      <td class="num"><?= (int) $summary['out_connected'] ?> / <?= (int) $summary['out_total'] ?></td>
-      <td class="num"><?= View::e($dur($summary['talk_sec'])) ?></td>
-      <td class="num"><?= View::e($dur($summary['avg_talk_sec'])) ?></td>
-      <td class="num"><?= View::e($dur($summary['avg_ring_sec'])) ?></td>
-<?php if ($hasTimeline): ?>
-      <td class="num"><?= View::e($dur($summary['session_sec'])) ?></td>
-      <td class="num"><?= View::e($dur($summary['pause_sec'])) ?></td>
-<?php endif; ?>
-    </tr>
+<?= $this->render('_stats_cells', ['r' => $summary, 'tl' => $hasTimeline, 'link' => null, 'pauseTitle' => '']) ?>    </tr>
   </tbody>
 </table>
 </div>

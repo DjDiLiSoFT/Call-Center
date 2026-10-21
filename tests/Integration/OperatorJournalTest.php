@@ -134,6 +134,24 @@ class OperatorJournalTest extends DbTestCase
         $this->assertSame('1005', $items[3]['reason']);
     }
 
+    public function test_internal_call_shows_other_party_from_callers_side(): void
+    {
+        $this->db->exec("INSERT INTO operators (extension, fpbx_name) VALUES ('1004', 'Иван'), ('1006', 'Мария')");
+        // client_number = caller's own number (1004), answered_by = callee
+        $this->call('k1', 'internal', null, '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'out', 'answered', 1, 20, '2026-10-18 10:00:00', '2026-10-18 10:00:01'),
+        ], ['clientNumber' => '1004', 'answeredBy' => '1006']);
+        // callee side: client_number = caller
+        $this->call('k2', 'internal', null, '2026-10-18 11:00:00', [
+            new AgentOutcome('1004', 'in', 'answered', 1, 20, '2026-10-18 11:00:00', '2026-10-18 11:00:01'),
+        ], ['clientNumber' => '1006', 'answeredBy' => '1004']);
+        $items = $this->journal()->fetch('1004', $this->period());
+        $this->assertSame('Мария (1006)', $items[0]['client']);
+        $this->assertSame('out', $items[0]['reason']);
+        $this->assertSame('Мария (1006)', $items[1]['client']);
+        $this->assertSame('in', $items[1]['reason']);
+    }
+
     public function test_collapse_consecutive_offline(): void
     {
         $mk = function (string $at, string $type): array {

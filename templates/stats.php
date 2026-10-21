@@ -11,10 +11,10 @@ use CallStats\Web\View;
 /** @var string[] $selected */
 $tl = $report['hasTimeline'];
 $dur = function ($sec) {
-    return $sec === null ? '—' : Format::duration((int) $sec);
+    return Format::durationOrDash($sec);
 };
 $pct = function ($v) {
-    return $v === null ? '—' : rtrim(rtrim(number_format($v, 1, ',', ''), '0'), ',') . '%';
+    return Format::pct($v);
 };
 $journal = function (string $ext) use ($period) {
     return '?' . http_build_query(array_merge(['p' => 'journal', 'ext' => $ext], $period->query()));
@@ -32,19 +32,7 @@ $reasonTitle = function (array $r) {
 ?>
 <form method="get" action="" class="filters card">
   <input type="hidden" name="p" value="stats">
-  <label>Период
-    <select name="preset" data-preset>
-<?php foreach (Period::PRESETS as $key => $label): ?>
-      <option value="<?= View::e($key) ?>"<?= $key === $period->preset ? ' selected' : '' ?>><?= View::e($label) ?></option>
-<?php endforeach; ?>
-    </select>
-  </label>
-  <label>С
-    <input type="date" name="from" value="<?= View::e($period->fromDate()) ?>" data-custom>
-  </label>
-  <label>По
-    <input type="date" name="to" value="<?= View::e($period->toDate()) ?>" data-custom>
-  </label>
+<?= $this->render('_period_fields', ['period' => $period]) ?>
   <label>Очередь
     <select name="queue">
       <option value="">Все очереди</option>
@@ -75,38 +63,12 @@ $reasonTitle = function (array $r) {
 <table class="sortable">
   <thead>
     <tr>
-      <th data-type="text">Оператор</th>
-      <th data-type="num" class="num">Принято</th>
-      <th data-type="num" class="num">Пропущено</th>
-      <th data-type="num" class="num">% ответа</th>
-      <th data-type="num" class="num">Не в сети</th>
-      <th data-type="num" class="num">Исходящие<br><span class="sub">состоялось / всего</span></th>
-      <th data-type="num" class="num">Время разговоров</th>
-      <th data-type="num" class="num">Средний разговор</th>
-      <th data-type="num" class="num">Ср. время до ответа</th>
-<?php if ($tl): ?>
-      <th data-type="num" class="num">Время в системе</th>
-      <th data-type="num" class="num">На паузе</th>
-<?php endif; ?>
-    </tr>
+<?= $this->render('_stats_head', ['tl' => $tl]) ?>    </tr>
   </thead>
   <tbody>
 <?php foreach ($report['rows'] as $r): ?>
     <tr>
-      <td data-sort="<?= View::e(mb_strtolower($r['name'])) ?>"><a href="<?= View::e($journal($r['extension'])) ?>"><?= View::e($r['name']) ?></a><?= $r['name'] !== (string) $r['extension'] ? ' <span class="muted">' . View::e($r['extension']) . '</span>' : '' ?></td>
-      <td class="num" data-sort="<?= $r['answered'] ?>"><?= $r['answered'] ?></td>
-      <td class="num" data-sort="<?= $r['missed'] ?>"><?= $r['missed'] ?></td>
-      <td class="num" data-sort="<?= $r['answer_pct'] === null ? -1 : number_format($r['answer_pct'], 1, '.', '') ?>"><?= View::e($pct($r['answer_pct'])) ?></td>
-      <td class="num" data-sort="<?= $r['offline'] ?>"><?= $r['offline'] ?></td>
-      <td class="num" data-sort="<?= $r['out_total'] ?>"><?= $r['out_connected'] ?> / <?= $r['out_total'] ?></td>
-      <td class="num" data-sort="<?= $r['talk_sec'] ?>"><?= View::e($dur($r['talk_sec'])) ?></td>
-      <td class="num" data-sort="<?= $r['avg_talk_sec'] ?>"><?= View::e($dur($r['avg_talk_sec'])) ?></td>
-      <td class="num" data-sort="<?= $r['avg_ring_sec'] ?>"><?= View::e($dur($r['avg_ring_sec'])) ?></td>
-<?php if ($tl): ?>
-      <td class="num" data-sort="<?= (int) $r['session_sec'] ?>"><?= View::e($dur($r['session_sec'])) ?></td>
-      <td class="num" data-sort="<?= (int) $r['pause_sec'] ?>"<?= $r['pauses_by_reason'] ? ' title="' . View::e($reasonTitle($r['pauses_by_reason'])) . '"' : '' ?>><?= View::e($dur($r['pause_sec'])) ?></td>
-<?php endif; ?>
-    </tr>
+<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'link' => $journal($r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
 <?php endforeach; ?>
   </tbody>
 <?php $t = $report['total']; ?>

@@ -2,6 +2,7 @@
 
 namespace CallStats\Report;
 
+use CallStats\Store\OperatorRepository;
 use PDO;
 
 /**
@@ -68,7 +69,7 @@ class OperatorJournal
         }
 
         $st = $this->db->prepare(
-            'SELECT c.id, c.kind, c.queue, c.started_at, c.client_number, c.recording_file, c.approx, c.sources,
+            'SELECT c.id, c.kind, c.queue, c.started_at, c.client_number, c.answered_by, c.recording_file, c.approx, c.sources,
                     ca.direction, ca.outcome, ca.ring_sec, ca.talk_sec, ca.first_ring_at
              FROM call_agents ca JOIN calls c ON c.id = ca.call_id
              WHERE ca.extension = ? AND c.started_at >= ? AND c.started_at <= ?'
@@ -85,6 +86,7 @@ class OperatorJournal
                 'sources' => $r['sources'] === null ? null : (string) $r['sources'],
             ];
             if ($r['kind'] === 'internal') {
+                $common['client'] = $this->otherParty($ext, $r);
                 $items[] = self::item($r['direction'] === 'out' ? $r['started_at'] : $r['first_ring_at'], 'internal', $common + [
                     'source' => 'Внутренний',
                     'reason' => $r['direction'] === 'out' ? 'out' : 'in',
@@ -174,6 +176,35 @@ class OperatorJournal
         }
         $flush();
         return $out;
+    }
+
+    /** The other side of an internal call as seen by $ext: "Name (1005)" or the bare number. */
+    private function otherParty(string $ext, array $r): string
+    {
+        $other = '';
+        $candidates = [];
+        if ($r['direction'] === 'out') {
+            $candidates[] = (string) $r['answered_by'];
+        } else {
+            $candidates[] = (string) $r['client_number'];
+        }
+        $st = $this->db->prepare('SELECT extension FROM call_agents WHERE call_id = ? AND extension <> ? ORDER BY id');
+        $st->execute([(int) $r['id'], $ext]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $e) {
+            $candidates[] = (string) $e;
+        }
+        $candidates[] = (string) $r['client_number'];
+        foreach ($candidates as $c) {
+            if ($c !== '' && $c !== $ext) {
+                $other = $c;
+                break;
+            }
+        }
+        if ($other === '') {
+            return '';
+        }
+        $name = (new OperatorRepository($this->db))->displayName($other);
+        return $name !== $other ? $name . ' (' . $other . ')' : $other;
     }
 
     private static function item(string $at, string $type, array $extra): array
