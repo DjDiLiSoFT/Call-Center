@@ -49,6 +49,8 @@ class Collector
     private $operators;
     /** @var AgentResolver|null */
     private $resolver;
+    /** @var callable|null */
+    private $warningHandler;
 
     public function __construct(Config $cfg, PDO $db, PDO $src, PDO $fpbx)
     {
@@ -91,8 +93,19 @@ class Collector
 
         $lastRun = $this->state->get('collector.last_run');
         $fromTs = ($lastRun !== null ? min((int) $lastRun, $nowTs) : $nowTs) - $lookback;
-        $maxCall = 3600 * (int) $this->cfg->get('collector.max_call_hours', 24);
-        $ids = $this->cdr->linkedidsEndedSince($this->fmt($nowTs - $maxCall), $this->fmt($fromTs), $this->fmt($nowTs));
+        $maxHours = (int) $this->cfg->get('collector.max_call_hours', 24);
+        $maxCall = 3600 * $maxHours;
+        if ($lastRun !== null && $nowTs - (int) $lastRun > $maxCall) {
+            $this->warn(sprintf(
+                'collector was not run for %.1f h (more than collector.max_call_hours = %d): calls of the gap are'
+                . ' collected from CDR by start time; queue_log events of rotated files need bin/rebuild.php',
+                ($nowTs - (int) $lastRun) / 3600,
+                $maxHours
+            ));
+        }
+        // After an outage longer than max_call_hours the scan must still reach back to the last run.
+        $startedFrom = min($nowTs - $maxCall, $fromTs);
+        $ids = $this->cdr->linkedidsEndedSince($this->fmt($startedFrom), $this->fmt($fromTs), $this->fmt($nowTs));
         foreach ($events as $e) {
             $ids[] = $e->callid;
         }
@@ -164,6 +177,26 @@ class Collector
             'sessions' => $tl[0],
             'pauses' => $tl[1],
         ];
+    }
+
+    /** @param callable $handler function (string $message): void; default writes to stderr */
+    public function setWarningHandler(callable $handler): void
+    {
+        $this->warningHandler = $handler;
+    }
+
+    private function warn(string $msg): void
+    {
+        if ($this->warningHandler !== null) {
+            ($this->warningHandler)($msg);
+            return;
+        }
+        $line = date('Y-m-d H:i:s') . ' callstats warning: ' . $msg . "\n";
+        if (defined('STDERR')) {
+            fwrite(STDERR, $line);
+        } else {
+            error_log(rtrim($line));
+        }
     }
 
     /** Operators and queue names from FreePBX into own tables; builds the resolver. */
@@ -290,7 +323,7 @@ class Collector
     {
         // The stored raw line is authoritative; columns are the fallback (raw longer than 512).
         $raw = (string) ($r['raw'] ?? '');
-        if ($raw !== '' && strlen($raw) < 512) {
+        if ($raw !== '' && mb_strlen($raw) < 512) {
             $e = QueueLogParser::parse($raw);
             if ($e !== null) {
                 return $e;

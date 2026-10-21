@@ -3,12 +3,17 @@
 
 use CallStats\Collector;
 use CallStats\Db;
+use CallStats\ProcessLock;
 
 $config = require __DIR__ . '/../src/bootstrap.php';
 
-$lockDir = DIRECTORY_SEPARATOR === '/' ? '/tmp' : sys_get_temp_dir();
-$lock = fopen($lockDir . '/callstats-collect.lock', 'c');
-if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+try {
+    $lock = ProcessLock::open();
+} catch (\RuntimeException $e) {
+    fwrite(STDERR, date('Y-m-d H:i:s') . ' callstats collect: ' . $e->getMessage() . "\n");
+    exit(1);
+}
+if (!flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0); // another run is in progress
 }
 

@@ -88,7 +88,7 @@ copy("$sampleDir/queue_log.txt", $qlogPath);
 $cfg = new Config([
     'timezone' => 'Asia/Tashkent',
     'queue_log' => ['path' => $qlogPath],
-    'collector' => ['lookback_minutes' => 120, 'queue_ring_timeout' => 15, 'direct_ring_timeout' => 20],
+    'collector' => ['lookback_minutes' => 120, 'queue_ring_timeout' => 15, 'direct_ring_timeout' => 20, 'max_call_hours' => 24],
 ]);
 $t = microtime(true);
 $counters = (new Collector($cfg, $db, $src, $fpbx))->rebuild($fromDate, $toDate);

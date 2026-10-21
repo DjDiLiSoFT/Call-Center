@@ -51,7 +51,7 @@ class CollectorTest extends DbTestCase
         $cfg = new Config([
             'timezone' => 'Asia/Tashkent',
             'queue_log' => ['path' => $this->qlogPath],
-            'collector' => ['lookback_minutes' => 120, 'queue_ring_timeout' => 15, 'direct_ring_timeout' => 20],
+            'collector' => ['lookback_minutes' => 120, 'queue_ring_timeout' => 15, 'direct_ring_timeout' => 20, 'max_call_hours' => 24],
         ]);
         return new Collector($cfg, $this->db, $this->src, $this->fpbx);
     }
@@ -181,6 +181,28 @@ class CollectorTest extends DbTestCase
         $call = $this->db->query('SELECT * FROM calls')->fetch();
         $this->assertSame('1004', $call['answered_by']);
         $this->assertSame('1', (string) $call['approx']);
+    }
+
+    public function test_outage_longer_than_max_call_hours_recovers_cdr(): void
+    {
+        // Last run at 16:00 on 2026-10-18, then the collector was down for 30 h. An outbound call
+        // made one hour after the last run must still be picked up by the next run.
+        $lastRun = strtotime('2026-10-18 16:00:00');
+        $this->collector()->runOnce($lastRun);
+        $f = $this->fixture('outbound_answered'); // 2026-10-18 16:56:37, 51 s
+        $this->insertCdr($f['cdr']);
+
+        $warnings = [];
+        $c = $this->collector();
+        $c->setWarningHandler(function (string $msg) use (&$warnings) {
+            $warnings[] = $msg;
+        });
+        $c->runOnce($lastRun + 30 * 3600);
+
+        $this->assertSame(1, $this->rowCount('calls'));
+        $this->assertSame('outbound', $this->db->query('SELECT kind FROM calls')->fetchColumn());
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('max_call_hours', $warnings[0]);
     }
 
     public function test_operator_names_synced_custom_kept(): void

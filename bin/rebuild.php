@@ -3,6 +3,7 @@
 
 use CallStats\Collector;
 use CallStats\Db;
+use CallStats\ProcessLock;
 
 $config = require __DIR__ . '/../src/bootstrap.php';
 
@@ -16,9 +17,13 @@ if (!preg_match($re, $from) || !preg_match($re, $to)) {
 }
 
 // Do not run together with the cron collector.
-$lockDir = DIRECTORY_SEPARATOR === '/' ? '/tmp' : sys_get_temp_dir();
-$lock = fopen($lockDir . '/callstats-collect.lock', 'c');
-if ($lock === false || !flock($lock, LOCK_EX)) {
+try {
+    $lock = ProcessLock::open();
+} catch (\RuntimeException $e) {
+    fwrite(STDERR, $e->getMessage() . "\n");
+    exit(1);
+}
+if (!flock($lock, LOCK_EX)) {
     fwrite(STDERR, "Не удалось получить блокировку\n");
     exit(1);
 }
