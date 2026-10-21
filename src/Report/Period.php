@@ -93,6 +93,26 @@ class Period
         return substr($this->to, 0, 10);
     }
 
+    /**
+     * The period of the same length right before this one. While this period is still running
+     * (now inside it), the previous one is cut to the same elapsed time, so "today until 12:00"
+     * compares with "yesterday until 12:00", not with the whole of yesterday.
+     */
+    public function previous(int $nowTs): Period
+    {
+        $days = (int) round((strtotime($this->toDate()) - strtotime($this->fromDate())) / 86400) + 1;
+        $prev = new Period(
+            'custom',
+            date('Y-m-d', strtotime($this->fromDate() . " -$days days")),
+            date('Y-m-d', strtotime($this->fromDate() . ' -1 day'))
+        );
+        $start = strtotime($this->from);
+        if ($nowTs >= $start && $nowTs <= strtotime($this->to)) {
+            $prev->to = date('Y-m-d H:i:s', strtotime($prev->from) + ($nowTs - $start));
+        }
+        return $prev;
+    }
+
     /** Query parameters that reproduce this period on another page. */
     public function query(): array
     {

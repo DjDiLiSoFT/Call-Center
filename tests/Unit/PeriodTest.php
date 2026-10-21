@@ -16,6 +16,26 @@ class PeriodTest extends TestCase
         $this->now = mktime(12, 0, 0, 10, 21, 2026); // Wednesday
     }
 
+    public function test_previous_of_running_period_is_cut_to_the_same_elapsed_time(): void
+    {
+        $prev = Period::fromRequest([], $this->now)->previous($this->now); // today 12:00
+        $this->assertSame('2026-10-20 00:00:00', $prev->from);
+        $this->assertSame('2026-10-20 12:00:00', $prev->to);
+
+        $week = Period::fromRequest(['preset' => 'this_week'], $this->now)->previous($this->now); // Mon 19 .. Wed 12:00
+        $this->assertSame('2026-10-12 00:00:00', $week->from);
+        $this->assertSame('2026-10-14 12:00:00', $week->to);
+    }
+
+    public function test_previous_of_finished_period_has_the_same_length(): void
+    {
+        $prev = Period::fromRequest(['preset' => 'custom', 'from' => '2026-10-10', 'to' => '2026-10-13'], $this->now)
+            ->previous($this->now);
+        $this->assertSame('2026-10-06 00:00:00', $prev->from);
+        $this->assertSame('2026-10-09 23:59:59', $prev->to);
+        $this->assertSame('2026-10-06', $prev->fromDate());
+    }
+
     public function test_default_is_today(): void
     {
         $p = Period::fromRequest([], $this->now);

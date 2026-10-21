@@ -33,8 +33,9 @@ class DashboardReport
     {
         $days = (int) round((strtotime($p->toDate()) - strtotime($p->fromDate())) / 86400) + 1;
         $bucket = $days === 1 ? 'hour' : 'day';
-        $prevFrom = date('Y-m-d', strtotime($p->fromDate() . " -$days days")) . ' 00:00:00';
-        $prevTo = date('Y-m-d', strtotime($p->fromDate() . ' -1 day')) . ' 23:59:59';
+        $prevPeriod = $p->previous($now);
+        $prevFrom = $prevPeriod->from;
+        $prevTo = $prevPeriod->to;
 
         $cur = $this->totals($p->from, $p->to);
         $prev = $this->totals($prevFrom, $prevTo);

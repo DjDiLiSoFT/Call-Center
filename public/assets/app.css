@@ -222,3 +222,21 @@ table.calls td.c-desc { white-space: nowrap; }
 .rp { max-width: 340px; } table.calls .c-play { width: 340px; }
 input[type=number] { display: block; width: 100%; margin-top: .25rem; padding: .5rem .6rem;
   border: 1px solid var(--border); border-radius: 4px; font: inherit; background: #fff; }
+
+/* Stats: rank, deltas, answer-rate bars, inactive operators */
+td.rank { color: var(--muted); width: 1%; }
+td.rank .top { color: #d97706; font-size: 1.1rem; }
+.dlt { display: block; font-size: .72rem; color: var(--muted); line-height: 1.1; white-space: nowrap; }
+.dlt.good { color: #15803d; }
+.dlt.bad { color: var(--danger); }
+td.pct { min-width: 92px; }
+.pct-bar { display: block; height: 4px; margin-top: 3px; background: #e5e9ee; border-radius: 2px; overflow: hidden; }
+.pct-bar > span { display: block; height: 100%; border-radius: 2px; }
+.pct-bar.lvl-good > span { background: #16a34a; }
+.pct-bar.lvl-warn > span { background: #d97706; }
+.pct-bar.lvl-bad > span { background: var(--danger); }
+td.missed-high { color: var(--danger); font-weight: 600; }
+.linkish { border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0; }
+.linkish:hover { color: var(--accent); }
+tbody.inactive td { color: var(--muted); }
+table.sortable th, table.sortable td { padding: .5rem .5rem; }

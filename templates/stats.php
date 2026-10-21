@@ -5,6 +5,8 @@ use CallStats\Web\View;
 
 /** @var \CallStats\Report\Period $period */
 /** @var array $report */
+/** @var array $insights StatsInsights::build() */
+/** @var string $prevLabel previous period, e.g. "20.10 00:00 — 20.10 12:00" */
 $tl = $report['hasTimeline'];
 $dur = function ($sec) {
     return Format::durationOrDash($sec);
@@ -32,7 +34,7 @@ $reasonTitle = function (array $r) {
   <button type="submit" class="primary">Показать</button>
 </form>
 
-<p class="muted" data-autorefresh="60">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?>. Страница обновляется сама раз в минуту.</p>
+<p class="muted" data-autorefresh="60">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?>. Стрелки ▲▼ — сравнение с <?= View::e($prevLabel) ?>. Страница обновляется сама раз в минуту.</p>
 <?php if ($report['hasApprox']): ?>
 <p class="notice">часть данных за выбранный период приблизительная</p>
 <?php endif; ?>
@@ -44,17 +46,30 @@ $reasonTitle = function (array $r) {
 <table class="sortable">
   <thead>
     <tr>
-<?= $this->render('_stats_head', ['tl' => $tl]) ?>    </tr>
+<?= $this->render('_stats_head', ['tl' => $tl, 'rank' => true]) ?>    </tr>
   </thead>
   <tbody>
-<?php foreach ($report['rows'] as $r): ?>
+<?php foreach ($insights['active'] as $r): ?>
     <tr>
-<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'link' => $journal($r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
+<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'rank' => true, 'link' => $journal($r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
 <?php endforeach; ?>
   </tbody>
+<?php if ($insights['inactive']): $n = count($insights['inactive']); ?>
+  <tbody class="inactive-toggle">
+    <tr><td colspan="<?= $tl ? 12 : 10 ?>"><button type="button" class="linkish" data-toggle-inactive aria-expanded="false">▸ Ещё <?= $n ?> <?= \CallStats\Web\Charts::plural($n, 'оператор', 'оператора', 'операторов') ?> без звонков за период: <?= View::e(implode(', ', array_column($insights['inactive'], 'name'))) ?></button></td></tr>
+  </tbody>
+  <tbody class="inactive" hidden>
+<?php foreach ($insights['inactive'] as $r): ?>
+    <tr>
+      <td class="num rank">—</td>
+<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'link' => $journal($r['extension']), 'pauseTitle' => '']) ?>    </tr>
+<?php endforeach; ?>
+  </tbody>
+<?php endif; ?>
 <?php $t = $report['total']; ?>
   <tfoot>
     <tr>
+      <th></th>
       <th>Итого</th>
       <th class="num"><?= $t['answered'] ?></th>
       <th class="num"><?= $t['missed'] ?></th>

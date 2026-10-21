@@ -11,6 +11,7 @@ use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
 use CallStats\Report\RecordingSearch;
+use CallStats\Report\StatsInsights;
 use CallStats\Web\RecordingLocator;
 use CallStats\Web\RecordingStreamer;
 use CallStats\Store\OperatorRepository;
@@ -37,10 +38,16 @@ $app->route('dashboard', function (array $get, array $post) use ($app, $db, $ops
 });
 
 $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): string {
-    $period = Period::fromRequest($get, time());
+    $now = time();
+    $period = Period::fromRequest($get, $now);
+    $prev = $period->previous($now);
+    $stats = new OperatorStatsReport($db, $ops);
+    $report = $stats->fetch($period, null, [], $now);
     return $app->view()->render('stats', [
         'period' => $period,
-        'report' => (new OperatorStatsReport($db, $ops))->fetch($period, null, []),
+        'report' => $report,
+        'insights' => StatsInsights::build($report['rows'], $stats->fetch($prev, null, [], $now)['rows']),
+        'prevLabel' => date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to)),
     ]);
 });
 

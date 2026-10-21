@@ -145,3 +145,14 @@
 Array.prototype.forEach.call(document.querySelectorAll('select[data-autosubmit]'), function (s) {
   s.addEventListener('change', function () { s.form.submit(); });
 });
+
+// Stats: show / hide operators without calls.
+Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-inactive]'), function (b) {
+  b.addEventListener('click', function () {
+    var body = b.closest('table').querySelector('tbody.inactive');
+    var open = body.hidden;
+    body.hidden = !open;
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    b.textContent = (open ? '▾' : '▸') + b.textContent.slice(1);
+  });
+});
