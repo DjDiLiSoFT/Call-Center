@@ -73,6 +73,10 @@ class CallBuilder
                 $this->buildDirect($call, $rows, $callerExt);
             }
         }
+        // "Caller hung up" with 0 s of ringing: the phone never rang, so it is no attempt at all.
+        $call->agents = array_values(array_filter($call->agents, function (AgentOutcome $a) {
+            return !($a->outcome === 'caller_hangup' && $a->ringSec === 0);
+        }));
         return $call;
     }
 

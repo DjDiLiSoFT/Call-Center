@@ -157,6 +157,32 @@ class CollectorTest extends DbTestCase
         ], $this->outcomes());
     }
 
+    public function test_long_call_ending_now_is_collected(): void
+    {
+        // A 3-hour call: CDR writes its rows only at hangup, with calldate = call start,
+        // i.e. far before the lookback window (120 min).
+        $f = $this->fixture('queue_ringall_1004');
+        $rows = $f['cdr'];
+        foreach ($rows as &$r) {
+            if ($r[9] === '1792321160.222956' || strpos($r[5], 'Local/1004@') === 0) {
+                $r[6] = 10833; // duration
+                $r[7] = $r[3] === 'ext-queues' ? 10833 : 10830; // billsec
+            }
+        }
+        unset($r);
+        $start = 1792321160;
+        $this->collector()->runOnce($start + 3 * 3600 - 60);
+        $this->assertSame(0, $this->rowCount('calls'));
+
+        $this->insertCdr($rows);
+        $this->collector()->runOnce($start + 3 * 3600 + 60);
+
+        $this->assertSame(1, $this->rowCount('calls'));
+        $call = $this->db->query('SELECT * FROM calls')->fetch();
+        $this->assertSame('1004', $call['answered_by']);
+        $this->assertSame('1', (string) $call['approx']);
+    }
+
     public function test_operator_names_synced_custom_kept(): void
     {
         $ops = new OperatorRepository($this->db);
@@ -235,6 +261,11 @@ class CollectorTest extends DbTestCase
             ($t + 60) . "|NONE|1000|PJSIP/1006|PAUSE||Обед",
         ]);
         $this->collector()->runOnce($t + 120);
+        // the raw line is kept as is (trailing empty field included)
+        $this->assertSame(
+            "$t|NONE|1000|PJSIP/1006|ADDMEMBER|",
+            $this->db->query("SELECT raw FROM qlog_events WHERE event = 'ADDMEMBER'")->fetchColumn()
+        );
         $s = $this->db->query('SELECT * FROM agent_sessions')->fetchAll();
         $this->assertCount(1, $s);
         $this->assertNull($s[0]['end_at']);

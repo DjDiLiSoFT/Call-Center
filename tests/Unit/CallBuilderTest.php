@@ -111,14 +111,15 @@ class CallBuilderTest extends TestCase
 
     public function test_queue_short_ringcanceled_with_no_answer_leg_stays_caller_hangup(): void
     {
-        // Caller abandons: 1001 really rang (leg NO ANSWER) -> caller_hangup; 1010 FAILED -> offline.
+        // Caller abandons after 5 s: 1001 really rang (leg NO ANSWER, 5000 ms) -> caller_hangup;
+        // 1010 FAILED -> offline.
         $rows = $this->rows([
             $this->queueLeg('1001', 5, 'NO ANSWER', 1),
             $this->queueLeg('1010', 0, 'FAILED', 2),
         ]);
         $events = $this->events([
             '1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1',
-            '1792570005|1792570000.1|1000|1001|RINGCANCELED|35',
+            '1792570005|1792570000.1|1000|1001|RINGCANCELED|5000',
             '1792570005|1792570000.1|1000|1010|RINGCANCELED|35',
             '1792570005|1792570000.1|1000|NONE|ABANDON|1|1|5',
         ]);
@@ -135,7 +136,7 @@ class CallBuilderTest extends TestCase
         // Real sample pattern: offline 1005 (RINGNOANSWER|0 every round); the caller abandons
         // exactly when a new ringall round starts, so every member logs RINGCANCELED|35 and its
         // leg is NO ANSWER with duration 0. The phone never rang: still offline, not caller_hangup.
-        // 1001 rang for real in round 1: missed. 1002 had only the 35 ms blip: caller_hangup.
+        // 1001 rang for real in round 1: missed. 1002 had only the 35 ms blip: it never rang -> dropped.
         $rows = $this->rows([
             $this->queueLeg('1005', 0, 'FAILED', 1),
             $this->queueLeg('1001', 15, 'NO ANSWER', 2),
@@ -156,23 +157,45 @@ class CallBuilderTest extends TestCase
 
         $this->assertSame([
             '1001/in' => 'missed',
-            '1002/in' => 'caller_hangup',
             '1005/in' => 'offline',
         ], $this->outcomes($call));
         $this->assertSame(15, $this->byExt($call)['1001/in']->ringSec);
     }
 
+    public function test_caller_hangup_before_any_phone_rang_has_no_operators(): void
+    {
+        // Real sample pattern: the caller hangs up ~1 s after entering the queue, every member
+        // logs RINGCANCELED|31 and every leg is NO ANSWER 0 s. Nobody's phone rang.
+        $legs = [];
+        $lines = ['1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1'];
+        foreach (['1001', '1002', '1005'] as $i => $ext) {
+            $legs[] = $this->queueLeg($ext, 0, 'NO ANSWER', $i + 1);
+            $lines[] = "1792570001|1792570000.1|1000|$ext|RINGCANCELED|31";
+        }
+        $lines[] = '1792570001|1792570000.1|1000|NONE|ABANDON|1|1|1';
+        $call = $this->builder->build('1792570000.1', $this->rows($legs), $this->events($lines));
+
+        $this->assertSame('queue', $call->kind);
+        $this->assertNull($call->answeredBy);
+        $this->assertSame([], $call->agents);
+
+        // the same without queue_log (approx)
+        $call = $this->builder->build('1792570000.1', $this->rows($legs), []);
+        $this->assertNull($call->answeredBy);
+        $this->assertSame([], $call->agents);
+    }
+
     public function test_approx_zero_second_leg_does_not_override_offline(): void
     {
         // No queue_log: 1005 FAILED in round 1, then a 0 s NO ANSWER leg when the caller hung up
-        // at the start of round 2 -> offline. 1002 with only a 0 s leg stays caller_hangup.
+        // at the start of round 2 -> offline. 1002 with only a 0 s leg never rang -> dropped.
         $rows = $this->rows([
             $this->queueLeg('1005', 0, 'FAILED', 1),
             $this->queueLeg('1005', 0, 'NO ANSWER', 2),
             $this->queueLeg('1002', 0, 'NO ANSWER', 3),
         ]);
         $call = $this->builder->build('1792570000.1', $rows, []);
-        $this->assertSame(['1002/in' => 'caller_hangup', '1005/in' => 'offline'], $this->outcomes($call));
+        $this->assertSame(['1005/in' => 'offline'], $this->outcomes($call));
     }
 
     public function test_approx_short_leg_on_unanswered_call_is_caller_hangup(): void

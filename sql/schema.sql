@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `qlog_events` (
   `agent` VARCHAR(80) NOT NULL DEFAULT '',
   `event` VARCHAR(32) NOT NULL DEFAULT '',
   `data` VARCHAR(255) NOT NULL DEFAULT '',
+  `raw` VARCHAR(512) NOT NULL DEFAULT '',
   `line_hash` CHAR(40) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `line_hash` (`line_hash`),

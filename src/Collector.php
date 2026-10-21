@@ -8,6 +8,7 @@ use CallStats\Build\CallBuilder;
 use CallStats\Source\CdrSource;
 use CallStats\Source\FreepbxDirectory;
 use CallStats\Source\QueueLogEvent;
+use CallStats\Source\QueueLogParser;
 use CallStats\Source\QueueLogReader;
 use CallStats\Store\CallRepository;
 use CallStats\Store\OperatorRepository;
@@ -90,7 +91,8 @@ class Collector
 
         $lastRun = $this->state->get('collector.last_run');
         $fromTs = ($lastRun !== null ? min((int) $lastRun, $nowTs) : $nowTs) - $lookback;
-        $ids = $this->cdr->linkedidsBetween($this->fmt($fromTs), $this->fmt($nowTs));
+        $maxCall = 3600 * (int) $this->cfg->get('collector.max_call_hours', 24);
+        $ids = $this->cdr->linkedidsEndedSince($this->fmt($nowTs - $maxCall), $this->fmt($fromTs), $this->fmt($nowTs));
         foreach ($events as $e) {
             $ids[] = $e->callid;
         }
@@ -203,7 +205,7 @@ class Collector
             $marks = [];
             $params = [];
             foreach ($chunk as $e) {
-                $marks[] = '(?,?,?,?,?,?,?)';
+                $marks[] = '(?,?,?,?,?,?,?,?)';
                 array_push(
                     $params,
                     $e->ts,
@@ -212,11 +214,12 @@ class Collector
                     mb_substr($e->agent, 0, 80),
                     mb_substr($e->event, 0, 32),
                     mb_substr(implode('|', $e->data), 0, 255),
+                    mb_substr($e->raw, 0, 512),
                     sha1($e->raw)
                 );
             }
             $st = $this->db->prepare(
-                'INSERT IGNORE INTO qlog_events (ts, callid, queue, agent, event, data, line_hash) VALUES ' . implode(',', $marks)
+                'INSERT IGNORE INTO qlog_events (ts, callid, queue, agent, event, data, raw, line_hash) VALUES ' . implode(',', $marks)
             );
             $st->execute($params);
             $n += $st->rowCount();
@@ -273,7 +276,7 @@ class Collector
             return $out;
         }
         $st = $this->db->prepare(
-            'SELECT ts, callid, queue, agent, event, data FROM qlog_events WHERE callid IN ('
+            'SELECT ts, callid, queue, agent, event, data, raw FROM qlog_events WHERE callid IN ('
             . implode(',', array_fill(0, count($callids), '?')) . ') ORDER BY ts, id'
         );
         $st->execute($callids);
@@ -285,6 +288,14 @@ class Collector
 
     private function hydrate(array $r): QueueLogEvent
     {
+        // The stored raw line is authoritative; columns are the fallback (raw longer than 512).
+        $raw = (string) ($r['raw'] ?? '');
+        if ($raw !== '' && strlen($raw) < 512) {
+            $e = QueueLogParser::parse($raw);
+            if ($e !== null) {
+                return $e;
+            }
+        }
         $data = (string) $r['data'] === '' ? [] : explode('|', (string) $r['data']);
         $head = [(string) $r['ts'], (string) $r['callid'], (string) $r['queue'], (string) $r['agent'], (string) $r['event']];
         return new QueueLogEvent(
@@ -315,7 +326,7 @@ class Collector
         }
         $marks = implode(',', array_fill(0, count(self::TIMELINE_EVENTS), '?'));
         $st = $this->db->prepare(
-            "SELECT ts, callid, queue, agent, event, data FROM qlog_events WHERE ts >= ? AND ts <= ? AND event IN ($marks) ORDER BY ts, id"
+            "SELECT ts, callid, queue, agent, event, data, raw FROM qlog_events WHERE ts >= ? AND ts <= ? AND event IN ($marks) ORDER BY ts, id"
         );
         $st->execute(array_merge([$fromTs, $nowTs], self::TIMELINE_EVENTS));
         $events = [];

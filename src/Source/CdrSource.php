@@ -34,6 +34,24 @@ class CdrSource
     }
 
     /**
+     * Distinct linkedids of CDR rows that started in [$startedFrom, $to] and ended at or after
+     * $endedSince. CDR rows are written at hangup with calldate = start, so a long call appears
+     * with an old calldate: $startedFrom bounds the calldate index scan (max call length), the
+     * end condition keeps only rows that ended recently.
+     *
+     * @return string[]
+     */
+    public function linkedidsEndedSince(string $startedFrom, string $endedSince, string $to): array
+    {
+        $st = $this->src->prepare(
+            "SELECT DISTINCT linkedid FROM cdr WHERE calldate >= ? AND calldate <= ?"
+            . " AND calldate + INTERVAL duration SECOND >= ? AND linkedid <> ''"
+        );
+        $st->execute([$startedFrom, $to, $endedSince]);
+        return array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * All CDR rows of the given linkedids, ordered by calldate, sequence.
      *
      * cdr has no index on linkedid. A linkedid is "<epoch>.<n>" of the first channel, and no row
