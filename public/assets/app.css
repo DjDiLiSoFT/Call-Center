@@ -1,0 +1,59 @@
+:root {
+  --bg: #f4f5f7;
+  --surface: #fff;
+  --text: #1f2933;
+  --muted: #6b7785;
+  --border: #d9dee4;
+  --accent: #1f6feb;
+  --accent-dark: #1859c1;
+  --danger: #b42318;
+  --danger-bg: #fdecea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+h1 { font-size: 1.4rem; margin: 0 0 1rem; font-weight: 600; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.error { color: var(--danger); background: var(--danger-bg); padding: .5rem .75rem; border-radius: 4px; }
+
+.topbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem;
+  background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.25rem;
+}
+.brand { font-weight: 700; letter-spacing: .02em; padding: .75rem 0; }
+.menu { display: flex; flex-wrap: wrap; align-items: stretch; gap: .25rem; flex: 1; }
+.menu a, .menu .logout button {
+  display: block; padding: .8rem .9rem; color: var(--text); text-decoration: none;
+  border: 0; border-bottom: 3px solid transparent; background: none; font: inherit; cursor: pointer;
+}
+.menu a:hover, .menu .logout button:hover { background: var(--bg); }
+.menu a.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.menu .logout { margin: 0 0 0 auto; display: flex; }
+.menu .logout button { color: var(--muted); }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.25rem; }
+.page.narrow { max-width: 420px; padding-top: 4rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; }
+
+label { display: block; margin-bottom: 1rem; font-weight: 500; }
+input[type=text], input[type=password], input[type=date], input[type=search], select {
+  display: block; width: 100%; margin-top: .25rem; padding: .5rem .6rem;
+  border: 1px solid var(--border); border-radius: 4px; font: inherit; background: #fff;
+}
+input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary {
+  width: 100%; padding: .6rem; border: 0; border-radius: 4px; background: var(--accent);
+  color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+button.primary:hover { background: var(--accent-dark); }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+th, td { padding: .5rem .7rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: #eef0f3; font-weight: 600; font-size: .85rem; color: #3e4c59; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: #f7f9fc; }
