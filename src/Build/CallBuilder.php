@@ -17,6 +17,8 @@ class CallBuilder
     private $resolver;
     /** @var AttemptCollector */
     private $collector;
+    /** @var TransferDetector */
+    private $transfers;
     /** @var int */
     private $directRingTimeoutSec;
 
@@ -30,6 +32,7 @@ class CallBuilder
     {
         $this->resolver = $r;
         $this->collector = new AttemptCollector($r, $ringTimeoutSec);
+        $this->transfers = new TransferDetector($r, $this->collector);
         $this->directRingTimeoutSec = $directRingTimeoutSec;
     }
 
@@ -84,11 +87,13 @@ class CallBuilder
 
         $q = $this->collector->fromQueueLog($events, $queueRows);
         $eq = $this->collector->fromQueueRows($queueRows);
+        // Rows dialing another operator's phone (not that operator's own queue leg) = transfers.
+        $foreign = array_values(array_filter($rows, [$this->transfers, 'isForeignPhoneLeg']));
         $legRows = array_filter($rows, function (array $r) {
-            return $r['dcontext'] === 'ext-local' && preg_match('#^Local/[^@]+@from-queue#', $r['channel']);
+            return $r['dcontext'] === 'ext-local' && preg_match('#^Local/[^@]+@from-queue#', $r['channel'])
+                && !$this->transfers->isForeignPhoneLeg($r);
         });
         $legs = $this->collector->fromLegs($legRows, 'channel');
-        $call->transfers = $q['transfers'];
 
         $agents = [];
         foreach (array_keys($q['agents'] + $eq + $legs) as $ext) {
@@ -116,6 +121,7 @@ class CallBuilder
         } elseif ($answerer !== null) {
             $call->talkSec = (int) $answerer['talk'];
         }
+        $this->transfers->apply($call, $agents, $foreign, $rows, $q['transfers']);
         $this->finish($call, $agents, $q['waitSec']);
     }
 
@@ -150,10 +156,21 @@ class CallBuilder
         $call->kind = ($callerExt !== null && $this->resolver->isExtension($first['dst'])) ? 'internal' : 'direct';
         $call->clientNumber = $first['src'];
 
-        $legRows = array_filter($rows, function (array $r) {
-            return $r['dcontext'] === 'ext-local' && $this->collector->phoneOf($r['dstchannel']) !== null;
+        $legRows = array_values(array_filter($rows, function (array $r) {
+            return $r['dcontext'] !== 'ext-queues' && $this->collector->phoneOf($r['dstchannel']) !== null;
+        }));
+        $all = $this->collector->fromLegs($legRows, 'dstchannel', $this->directRingTimeoutSec);
+        if ($callerExt !== null) {
+            unset($all[$callerExt]);
+        }
+        // Legs that start after the first answer are transfers, not part of the original ringing.
+        $firstAnswerer = $this->firstAnswered($all);
+        $since = $firstAnswerer !== null ? $all[$firstAnswerer]['answeredAt'] : null;
+        $after = $this->transfers->after($legRows, $since);
+        $before = array_filter($legRows, function (array $r) use ($since) {
+            return $since === null || strtotime($r['calldate']) <= $since;
         });
-        $agents = $this->collector->fromLegs($legRows, 'dstchannel', $this->directRingTimeoutSec);
+        $agents = $this->collector->fromLegs($before, 'dstchannel', $this->directRingTimeoutSec);
         if ($callerExt !== null) {
             unset($agents[$callerExt]);
         }
@@ -161,6 +178,10 @@ class CallBuilder
         $call->answeredBy = $this->firstAnswered($agents);
         if ($call->answeredBy !== null) {
             $call->talkSec = (int) $agents[$call->answeredBy]['talk'];
+        }
+        $this->transfers->apply($call, $agents, $after, $rows, []);
+        if ($callerExt !== null) {
+            unset($agents[$callerExt]);
         }
         $this->finish($call, $agents, null);
 

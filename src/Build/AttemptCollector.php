@@ -107,13 +107,25 @@ class AttemptCollector
                         $waitSec = (int) ($d[2] ?? 0);
                     }
                     break;
+                case 'TRANSFER':
                 case 'BLINDTRANSFER':
-                    $transfers[] = ['from' => $this->agentOf($e->agent), 'to' => $this->agentOf($d[0] ?? ''), 'at' => date('Y-m-d H:i:s', $e->ts)];
-                    break;
                 case 'ATTENDEDTRANSFER':
-                    // Asterisk 18: ATTENDEDTRANSFER|BRIDGE|bridge|… / APP|app|… / LINK|chan1|chan2|…
-                    $to = ($d[0] ?? '') === 'LINK' ? $this->agentOf($d[2] ?? '') : '';
-                    $transfers[] = ['from' => $this->agentOf($e->agent), 'to' => $to, 'at' => date('Y-m-d H:i:s', $e->ts)];
+                    // TRANSFER (Asterisk < 12) / BLINDTRANSFER: <ext>|<context>|holdtime|calltime|origposition
+                    // ATTENDEDTRANSFER (Asterisk 18): BRIDGE|bridge|… / APP|app|… / LINK|chan1|chan2|…
+                    // (target known only for LINK; otherwise CallBuilder fills it from CDR)
+                    $from = $this->agentOf($e->agent);
+                    if ($e->event === 'ATTENDEDTRANSFER') {
+                        $to = ($d[0] ?? '') === 'LINK' ? $this->agentOf($d[2] ?? '') : '';
+                    } else {
+                        $to = $this->agentOf($d[0] ?? '');
+                    }
+                    $transfers[] = ['from' => $from, 'to' => $to, 'at' => date('Y-m-d H:i:s', $e->ts)];
+                    // Every format ends with holdtime|calltime|origposition: calltime is the
+                    // transferring operator's own talk (no COMPLETE* follows a transfer).
+                    $n = count($d);
+                    if ($n >= 3 && isset($agents[$from]) && $agents[$from]['answered'] && $agents[$from]['talk'] === null) {
+                        $agents[$from]['talk'] = (int) $d[$n - 2];
+                    }
                     break;
             }
         }
