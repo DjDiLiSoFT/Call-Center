@@ -1,4 +1,5 @@
 <?php
+use CallStats\Report\JournalTable;
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
@@ -7,22 +8,24 @@ use CallStats\Web\View;
 /** @var string $ext selected extension or '' */
 /** @var array|null $summary operator row of OperatorStatsReport */
 /** @var bool $hasTimeline */
-/** @var array[] $items journal items (offline runs already collapsed) */
-$dur = function ($sec) {
-    return Format::durationOrDash($sec);
+/** @var array $table JournalTable::apply() result */
+/** @var array $t ['q','sort','order','per'] */
+$base = array_merge(['p' => 'journal', 'ext' => $ext], $period->query());
+$url = function (array $over = []) use ($base, $t, $table): string {
+    $q = array_merge($base, ['q' => $t['q'], 'sort' => $t['sort'], 'order' => $t['order'], 'per' => $t['per'],
+        'page' => $table['page']], $over);
+    $q = array_filter($q, function ($v) {
+        return $v !== '' && $v !== null;
+    });
+    return '?' . http_build_query($q);
 };
-$hm = function (string $at) {
-    return substr($at, 11, 5);
-};
-$ruDate = function (string $day) {
-    return substr($day, 8, 2) . '.' . substr($day, 5, 2) . '.' . substr($day, 0, 4);
-};
-$minutes = function (?string $from, ?string $to) {
-    if ($from === null || $to === null) {
-        return '';
-    }
-    $sec = max(0, strtotime($to) - strtotime($from));
-    return $sec < 60 ? $sec . ' с' : (int) round($sec / 60) . ' мин';
+// Clicking a sortable header: same column flips the order, a new column starts descending.
+$sortLink = function (string $col, string $label) use ($t, $url): string {
+    $active = $t['sort'] === $col;
+    $order = $active && $t['order'] === 'desc' ? 'asc' : 'desc';
+    $arrow = $active ? ($t['order'] === 'desc' ? ' ▼' : ' ▲') : ' <span class="sort-off">⇅</span>';
+    return '<a class="th-sort" href="' . View::e($url(['sort' => $col, 'order' => $order, 'page' => 1])) . '">'
+        . View::e($label) . $arrow . '</a>';
 };
 $sourcesBlock = function (?string $json) {
     if ($json === null || $json === '') {
@@ -45,19 +48,8 @@ $sourcesBlock = function (?string $json) {
     }
     return '<details class="src"><summary>Источник</summary><pre>' . View::e(implode("\n", $lines)) . '</pre></details>';
 };
-$playLink = function (array $it) {
-    if (empty($it['has_recording']) || $it['call_id'] === null) {
-        return '';
-    }
-    return ' <span class="rec">' . $this->render('_play_cell', [
-        'id' => (int) $it['call_id'],
-        'status' => (string) ($it['rec_status'] ?? 'missing'),
-        'title' => $it['client'] . ', ' . substr((string) $it['at'], 0, 16),
-    ]) . '</span>';
-};
-$query = function (string $e) use ($period) {
-    return http_build_query(array_merge(['p' => 'journal', 'ext' => $e], $period->query()));
-};
+$arrows = ['in' => '←', 'out' => '→', 'internal' => '⇄'];
+$arrowTitles = ['in' => 'входящий', 'out' => 'исходящий', 'internal' => 'внутренний'];
 ?>
 <form method="get" action="" class="filters card">
   <input type="hidden" name="p" value="journal">
@@ -74,9 +66,8 @@ $query = function (string $e) use ($period) {
 </form>
 
 <?php if ($ext === ''): ?>
-<p class="muted">Выберите оператора, чтобы увидеть его журнал.</p>
+<p class="muted">Выберите оператора, чтобы увидеть историю его звонков.</p>
 <?php else: ?>
-<p class="muted">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?></p>
 <?php if ($summary): ?>
 <div class="table-wrap">
 <table>
@@ -92,68 +83,120 @@ $query = function (string $e) use ($period) {
 </div>
 <?php endif; ?>
 
-<?php if (!$items): ?>
-<p class="muted">За выбранный период событий нет.</p>
-<?php else: ?>
-<div class="journal">
-<?php $day = null; foreach ($items as $it): ?>
-<?php if (substr($it['at'], 0, 10) !== $day): $day = substr($it['at'], 0, 10); ?>
-  <h2 class="day"><?= View::e($ruDate($day)) ?></h2>
-<?php endif; ?>
-<?php
-$t = $it['type'];
-$grey = in_array($t, ['in_other', 'in_offline', 'offline_group'], true);
-$cls = 'ev ev-' . str_replace('_', '-', $t) . ($grey ? ' grey' : '');
-$client = $it['client'] ?? '';
-?>
-  <div class="<?= View::e($cls) ?>">
-    <span class="time"><?= View::e($hm($it['at'])) ?></span>
-    <span class="body">
-<?php switch ($t):
-    case 'session_start': ?>
-      Вход в очередь «<?= View::e($it['source']) ?>»
-<?php break; case 'session_end': ?>
-      Выход из очереди «<?= View::e($it['source']) ?>»
-<?php break; case 'pause': ?>
-      Пауза<?= $it['reason'] !== '' ? ' «' . View::e($it['reason']) . '»' : '' ?>
-      <?= $it['until'] !== null ? '(' . View::e($hm($it['at'])) . '–' . View::e($hm($it['until'])) . ', ' . View::e($minutes($it['at'], $it['until'])) . ')' : '(не завершена)' ?>
-      <span class="muted">очередь «<?= View::e($it['source']) ?>»</span>
-<?php break; case 'in_answered': ?>
-      <strong>Принят</strong> <?= View::e($client) ?>, <?= View::e($it['source']) ?>, ждал <?= (int) $it['ring_sec'] ?> с, говорил <?= View::e($dur($it['talk_sec'])) ?><?= $playLink($it) ?>
-<?php break; case 'in_missed': ?>
-      <strong class="bad">Пропущен</strong> <?= View::e($client) ?>, <?= View::e($it['source']) ?>, звонило <?= (int) $it['ring_sec'] ?> с
-<?php break; case 'in_other': ?>
-      Ответил другой оператор: <?= View::e($client) ?>, <?= View::e($it['source']) ?>, звонило <?= (int) $it['ring_sec'] ?> с
-<?php break; case 'in_caller_hangup': ?>
-      Клиент положил трубку: <?= View::e($client) ?>, <?= View::e($it['source']) ?>, звонило <?= (int) $it['ring_sec'] ?> с
-<?php break; case 'in_offline': ?>
-      Телефон не в сети: <?= View::e($client) ?>, <?= View::e($it['source']) ?>
-<?php break; case 'offline_group': ?>
-      Телефон не в сети: <?= (int) $it['count'] ?> звонков, <?= View::e($hm($it['at'])) ?>–<?= View::e($hm($it['until'])) ?>
-<?php break; case 'out': ?>
-      <?php if ($it['reason'] === 'answered'): ?><strong>Исходящий</strong> <?= View::e($client) ?>, состоялся, говорил <?= View::e($dur($it['talk_sec'])) ?><?= $playLink($it) ?>
-      <?php else: ?><strong>Исходящий</strong> <?= View::e($client) ?>, не состоялся<?= (int) $it['ring_sec'] > 0 ? ', звонил ' . (int) $it['ring_sec'] . ' с' : '' ?><?php endif; ?>
-
-<?php break; case 'internal': ?>
-      Внутренний звонок <?= $it['reason'] === 'out' ? 'на' : 'от' ?> <?= View::e($client) ?><?= (int) $it['talk_sec'] > 0 ? ', говорил ' . View::e($dur($it['talk_sec'])) : '' ?><?= $playLink($it) ?>
-<?php break; case 'transfer_out': ?>
-      Перевёл звонок <?= View::e($client) ?> на <?= View::e($it['reason']) ?>
-<?php break; case 'transfer_in': ?>
-      Получил перевод от <?= View::e($it['reason']) ?>: <?= View::e($client) ?>
-<?php break; endswitch; ?>
-<?php if (!empty($it['approx'])): ?>
-      <span class="approx">приблизительно</span>
-<?php endif; ?>
-<?php if ($t === 'offline_group'): ?>
-      <details class="src"><summary>Звонки</summary><pre><?php foreach ($it['items'] as $sub): ?><?= View::e($hm($sub['at']) . ' ' . $sub['client'] . ', ' . $sub['source']) ?>
-<?php endforeach; ?></pre></details>
-<?php elseif (!empty($it['call_id']) && $it['sources'] !== null): ?>
-      <?= $sourcesBlock($it['sources']) ?>
-<?php endif; ?>
-    </span>
-  </div>
+<section class="history card">
+  <header class="history-head">
+    <div>
+      <div class="history-title"><?= View::e($ext . (($operators[$ext] ?? $ext) !== $ext ? ' — ' . $operators[$ext] : '')) ?></div>
+      <div class="history-sub">история звонков · <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?></div>
+    </div>
+    <form method="get" action="" class="history-tools">
+<?php foreach ($base as $k => $v): ?>
+      <input type="hidden" name="<?= View::e($k) ?>" value="<?= View::e((string) $v) ?>">
 <?php endforeach; ?>
-</div>
+      <input type="hidden" name="sort" value="<?= View::e($t['sort']) ?>">
+      <input type="hidden" name="order" value="<?= View::e($t['order']) ?>">
+      <input type="hidden" name="per" value="<?= (int) $t['per'] ?>">
+      <input type="search" name="q" value="<?= View::e($t['q']) ?>" placeholder="Поиск по номеру" aria-label="Поиск">
+      <button type="submit" class="tool" title="Найти" aria-label="Найти">⌕</button>
+      <a class="tool" href="<?= View::e($url()) ?>" title="Обновить" aria-label="Обновить">⟳</a>
+    </form>
+  </header>
+
+<?php if ($table['total'] === 0): ?>
+  <p class="muted history-empty"><?= $t['q'] !== '' ? 'Ничего не найдено.' : 'За выбранный период звонков нет.' ?></p>
+<?php else: ?>
+  <div class="table-wrap">
+  <table class="calls">
+    <thead>
+      <tr>
+        <th class="c-date"><?= $sortLink('at', 'Дата') ?></th>
+        <th>Описание</th>
+        <th class="c-dur"><?= $sortLink('dur', 'Длительность') ?></th>
+        <th class="c-play">Прослушать</th>
+        <th class="c-ctl">Скачать</th>
+      </tr>
+    </thead>
+    <tbody>
+<?php foreach ($table['rows'] as $r): ?>
+      <tr class="<?= $r['muted'] ? 'muted-row' : '' ?>">
+        <td class="c-date"><?= View::e(Format::ruDateTime($r['at'])) ?></td>
+        <td class="c-desc">
+<?php if ($r['dir'] !== 'event'): ?>
+          <span class="dir" title="<?= View::e($arrowTitles[$r['dir']] . ($r['failed'] ? ', не состоялся' : '')) ?>"><?= $r['failed'] ? '<span class="fail">⊘</span>' : '' ?><?= $arrows[$r['dir']] ?></span>
+          <span class="num"><?= View::e($r['number'] !== '' ? $r['number'] : 'номер скрыт') ?></span>
+<?php else: ?>
+          <span class="ev-text"><?= View::e($r['text']) ?></span>
 <?php endif; ?>
+<?php if ($r['note'] !== ''): ?>
+          <span class="note"><?= View::e($r['note']) ?></span>
 <?php endif; ?>
-<?= $this->render('_player') ?>
+<?php if ($r['approx']): ?>
+          <span class="approx">приблизительно</span>
+<?php endif; ?>
+<?php if ($r['items']): ?>
+          <details class="src"><summary>Звонки</summary><pre><?php foreach ($r['items'] as $sub): ?><?= View::e(substr($sub['at'], 11, 5) . ' ' . $sub['client'] . ', ' . $sub['source']) ?>
+<?php endforeach; ?></pre></details>
+<?php elseif ($r['call_id'] !== null && $r['sources'] !== null): ?>
+          <?= $sourcesBlock($r['sources']) ?>
+<?php endif; ?>
+        </td>
+        <td class="c-dur"><?= $r['duration'] === null ? '' : View::e(Format::humanDuration((int) $r['duration'])) ?></td>
+        <td class="c-play">
+<?php if ($r['rec_status'] === 'ok'): ?>
+<?= $this->render('_row_player', ['id' => (int) $r['call_id']]) ?>
+<?php elseif ($r['rec_status'] === 'empty'): ?>
+          <span class="muted">запись пустая</span>
+<?php elseif ($r['rec_status'] === 'missing'): ?>
+          <span class="muted">файл не найден</span>
+<?php endif; ?>
+        </td>
+        <td class="c-ctl">
+<?php if ($r['rec_status'] === 'ok' || $r['rec_status'] === 'unsupported'): ?>
+          <a class="dl-icon" href="?p=play&amp;id=<?= (int) $r['call_id'] ?>&amp;dl=1" title="Скачать запись" aria-label="Скачать запись">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+<?php endif; ?>
+        </td>
+      </tr>
+<?php endforeach; ?>
+    </tbody>
+  </table>
+  </div>
+<?php endif; ?>
+
+  <footer class="history-foot">
+    <form method="get" action="" class="per-page">
+<?php foreach ($base as $k => $v): ?>
+      <input type="hidden" name="<?= View::e($k) ?>" value="<?= View::e((string) $v) ?>">
+<?php endforeach; ?>
+      <input type="hidden" name="q" value="<?= View::e($t['q']) ?>">
+      <input type="hidden" name="sort" value="<?= View::e($t['sort']) ?>">
+      <input type="hidden" name="order" value="<?= View::e($t['order']) ?>">
+      Показано <?= (int) $table['from'] ?>–<?= (int) $table['to'] ?> из <?= (int) $table['total'] ?>, по
+      <select name="per" data-autosubmit aria-label="Строк на странице">
+<?php foreach (JournalTable::PER_PAGE as $n): ?>
+        <option value="<?= $n ?>"<?= $n === (int) $t['per'] ? ' selected' : '' ?>><?= $n ?></option>
+<?php endforeach; ?>
+      </select>
+      строк на странице
+    </form>
+<?php if ($table['pages'] > 1):
+    $p = $table['page'];
+    $last = $table['pages'];
+    $show = array_unique(array_filter([1, $p - 2, $p - 1, $p, $p + 1, $p + 2, $last], function ($n) use ($last) {
+        return $n >= 1 && $n <= $last;
+    }));
+    sort($show); ?>
+    <nav class="pager" aria-label="Страницы">
+      <a class="pg<?= $p === 1 ? ' off' : '' ?>" href="<?= View::e($url(['page' => max(1, $p - 1)])) ?>" aria-label="Предыдущая">‹</a>
+<?php $prev = 0; foreach ($show as $n): ?>
+<?php if ($n - $prev > 1): ?>      <span class="pg gap">…</span>
+<?php endif; ?>
+      <a class="pg<?= $n === $p ? ' on' : '' ?>" href="<?= View::e($url(['page' => $n])) ?>"<?= $n === $p ? ' aria-current="page"' : '' ?>><?= $n ?></a>
+<?php $prev = $n; endforeach; ?>
+      <a class="pg<?= $p === $last ? ' off' : '' ?>" href="<?= View::e($url(['page' => min($last, $p + 1)])) ?>" aria-label="Следующая">›</a>
+    </nav>
+<?php endif; ?>
+  </footer>
+</section>
+<?php endif; ?>

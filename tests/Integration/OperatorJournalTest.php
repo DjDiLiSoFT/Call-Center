@@ -105,11 +105,13 @@ class OperatorJournalTest extends DbTestCase
             $items = $this->journal()->withRecordingStatus($items, new \CallStats\Web\RecordingLocator($root));
             $this->assertSame(['ok', 'empty', 'unsupported', 'missing'], array_column($items, 'rec_status'));
 
+            $t = ['q' => '', 'sort' => 'at', 'order' => 'desc', 'per' => 100];
             $html = (new \CallStats\Web\View(dirname(__DIR__, 2) . '/templates'))->render('journal', [
                 'period' => $this->period(), 'operators' => ['1004' => '1004'], 'ext' => '1004',
-                'summary' => null, 'hasTimeline' => false, 'items' => $items,
+                'summary' => null, 'hasTimeline' => false, 't' => $t,
+                'table' => \CallStats\Report\JournalTable::apply(\CallStats\Report\JournalTable::rows($items), '', 'at', 'desc', 1, 100),
             ]);
-            $this->assertSame(1, substr_count($html, 'js-play'));
+            $this->assertSame(1, substr_count($html, 'class="rp"'));
             $this->assertSame(2, substr_count($html, '&amp;dl=1'));
             $this->assertStringContainsString('запись пустая', $html);
             $this->assertStringContainsString('файл не найден', $html);

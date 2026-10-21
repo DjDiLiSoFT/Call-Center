@@ -5,6 +5,7 @@ use CallStats\Db;
 use CallStats\Live\AmiClient;
 use CallStats\Live\LiveSnapshot;
 use CallStats\Report\DashboardReport;
+use CallStats\Report\JournalTable;
 use CallStats\Report\OperatorJournal;
 use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
@@ -85,13 +86,25 @@ $app->route('journal', function (array $get, array $post) use ($app, $db, $ops, 
         $items = OperatorJournal::collapseOffline((new OperatorJournal($db))->fetch($ext, $period));
         $items = (new OperatorJournal($db))->withRecordingStatus($items, $locator);
     }
+    $str = function (string $k) use ($get): string {
+        return isset($get[$k]) && is_string($get[$k]) ? trim($get[$k]) : '';
+    };
+    $t = [
+        'q' => mb_substr($str('q'), 0, 40),
+        'sort' => $str('sort') === 'dur' ? 'dur' : 'at',
+        'order' => $str('order') === 'asc' ? 'asc' : 'desc',
+        'per' => in_array((int) $str('per'), JournalTable::PER_PAGE, true) ? (int) $str('per') : 100,
+    ];
+    $page = ctype_digit($str('page')) ? (int) min((int) $str('page'), 1000000) : 1;
+    $table = JournalTable::apply(JournalTable::rows($items), $t['q'], $t['sort'], $t['order'], $page, $t['per']);
     return $app->view()->render('journal', [
         'period' => $period,
         'operators' => $operators,
         'ext' => $ext,
         'summary' => $summary,
         'hasTimeline' => $hasTimeline,
-        'items' => $items,
+        'table' => $table,
+        't' => $t,
     ]);
 });
 

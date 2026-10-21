@@ -183,3 +183,69 @@
     if (document.visibilityState === 'visible') { window.location.reload(); }
   }, ms);
 }());
+
+// Journal: inline row players. One <audio> per row (created on first play); one plays at a time.
+(function () {
+  var rows = document.querySelectorAll('.rp');
+  if (!rows.length) { return; }
+  var current = null;
+  function fmt(s) {
+    if (!isFinite(s)) { return '--:--'; }
+    s = Math.floor(s);
+    return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2);
+  }
+  function audioOf(rp) {
+    if (rp._audio) { return rp._audio; }
+    var a = new Audio();
+    a.preload = 'metadata';
+    a.src = rp.getAttribute('data-src');
+    var play = rp.querySelector('.rp-play'), seek = rp.querySelector('.rp-seek');
+    var time = rp.querySelector('.rp-time'), total = rp.querySelector('.rp-total');
+    a.addEventListener('loadedmetadata', function () { total.textContent = fmt(a.duration); });
+    a.addEventListener('timeupdate', function () {
+      time.textContent = fmt(a.currentTime);
+      if (!rp._seeking && a.duration > 0) { seek.value = Math.round(a.currentTime / a.duration * 1000); }
+    });
+    a.addEventListener('play', function () { play.textContent = '❚❚'; play.setAttribute('aria-label', 'Пауза'); rp.classList.add('on'); });
+    a.addEventListener('pause', function () { play.textContent = '▶'; play.setAttribute('aria-label', 'Слушать'); rp.classList.remove('on'); });
+    a.addEventListener('error', function () { rp.classList.add('err'); total.textContent = 'ошибка'; });
+    rp._audio = a;
+    return a;
+  }
+  Array.prototype.forEach.call(rows, function (rp) {
+    var seek = rp.querySelector('.rp-seek');
+    rp.querySelector('.rp-play').addEventListener('click', function () {
+      var a = audioOf(rp);
+      if (a.paused) {
+        if (current && current !== a) { current.pause(); }
+        current = a;
+        a.play();
+      } else {
+        a.pause();
+      }
+    });
+    rp.querySelector('.rp-restart').addEventListener('click', function () {
+      var a = audioOf(rp);
+      a.currentTime = 0;
+      if (current && current !== a) { current.pause(); }
+      current = a;
+      a.play();
+    });
+    rp.querySelector('.rp-mute').addEventListener('click', function () {
+      var a = audioOf(rp);
+      a.muted = !a.muted;
+      this.textContent = a.muted ? '🔇' : '🔊';
+    });
+    seek.addEventListener('input', function () { rp._seeking = true; });
+    seek.addEventListener('change', function () {
+      var a = audioOf(rp);
+      var go = function () { a.currentTime = seek.value / 1000 * a.duration; rp._seeking = false; };
+      if (a.duration > 0) { go(); } else { a.addEventListener('loadedmetadata', go, { once: true }); }
+    });
+  });
+}());
+
+// Selects marked data-autosubmit submit their form on change (rows per page).
+Array.prototype.forEach.call(document.querySelectorAll('select[data-autosubmit]'), function (s) {
+  s.addEventListener('change', function () { s.form.submit(); });
+});
