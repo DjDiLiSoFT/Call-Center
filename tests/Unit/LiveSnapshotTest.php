@@ -56,18 +56,39 @@ class LiveSnapshotTest extends TestCase
         $this->assertSame('ringing', $byExt['1004']['state']);
         $this->assertSame('Иван', $byExt['1004']['name']);
         $this->assertSame('offline', $byExt['1005']['state']);
-        $this->assertSame('free', $byExt['1006']['state']);
-        $this->assertFalse($byExt['1006']['in_queue']);
+        $this->assertArrayNotHasKey('1006', $byExt, 'idle extension outside queues is not an agent');
         $this->assertArrayNotHasKey('552020515', $byExt, 'trunk is not an operator');
 
-        $this->assertSame(['talking', 'ringing', 'free', 'free', 'paused', 'offline'], array_column($s['agents'], 'state'));
+        $this->assertSame(['talking', 'ringing', 'free', 'paused', 'offline'], array_column($s['agents'], 'state'));
 
         $this->assertSame('Bananza', $s['queues'][0]['name']);
         $this->assertSame(['900000001', '900000002'], array_column($s['queues'][0]['waiting'], 'number'));
         $this->assertSame(42, $s['queues'][0]['waiting'][0]['wait_sec']);
 
-        $this->assertSame(['waiting' => 2, 'longest_wait' => 42, 'talking' => 1, 'ringing' => 1, 'free' => 2,
+        $this->assertSame(['waiting' => 2, 'longest_wait' => 42, 'talking' => 1, 'ringing' => 1, 'free' => 1,
             'paused' => 1, 'busy' => 0, 'offline' => 1], $s['summary']);
+    }
+
+    public function test_non_queue_extension_on_a_call_is_shown_but_not_counted(): void
+    {
+        $s = $this->snapshot([$this->member('1002', 1)], [
+            ['Event' => 'CoreShowChannel', 'Channel' => 'PJSIP/1006-0000ac01', 'ChannelState' => '6', 'BridgeId' => 'b9',
+                'ConnectedLineNum' => '900000007', 'Duration' => '00:00:30'],
+        ], [
+            ['Event' => 'ExtensionStatus', 'Exten' => '1006', 'Context' => 'ext-local', 'Status' => '1'],
+        ]);
+        $byExt = array_column($s['agents'], null, 'ext');
+        $this->assertSame('talking', $byExt['1006']['state']);
+        $this->assertFalse($byExt['1006']['in_queue']);
+        $this->assertSame(0, $s['summary']['talking']);
+        $this->assertSame(1, $s['summary']['free']);
+    }
+
+    public function test_paused_but_offline_is_offline(): void
+    {
+        $s = $this->snapshot([$this->member('1003', 5, 1, 'Обед')], [], []);
+        $this->assertSame('offline', $s['agents'][0]['state']);
+        $this->assertSame('', $s['agents'][0]['pause_reason']);
     }
 
     public function test_offline_non_queue_extensions_are_hidden(): void

@@ -118,8 +118,10 @@ fi
 # CoreShowChannels, ExtensionStateList). Filled in only when config.php has no ami.user yet.
 CFG="$APP/config/config.php"
 if ! CS_CFG="$CFG" "$PHP" -r '$c = require getenv("CS_CFG"); exit(empty($c["ami"]["user"]) ? 1 : 0);'; then
-    AMI_USER=$(mysql_root -N -B -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRUSER'" 2>/dev/null || true)
-    AMI_PASS=$(mysql_root -N -B -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRPASS'" 2>/dev/null || true)
+    AMI_USER=$(mysql_root -N -B -r -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRUSER'" 2>/dev/null || true)
+    AMI_PASS=$(mysql_root -N -B -r -e "SELECT value FROM asterisk.freepbx_settings WHERE keyword='AMPMGRPASS'" 2>/dev/null || true)
+    [ "$AMI_USER" = NULL ] && AMI_USER=''
+    [ "$AMI_PASS" = NULL ] && AMI_PASS=''
     if [ -n "$AMI_USER" ] && [ -n "$AMI_PASS" ]; then
         say "Подключение страницы «Онлайн» к Asterisk (AMI, пользователь $AMI_USER)"
         CFG_TMP="$CFG.tmp"

@@ -182,28 +182,36 @@ $app->route('live_data', function (array $get, array $post) use ($config, $db, $
         session_write_close(); // polling must not block other pages
     }
     header('Content-Type: application/json; charset=utf-8');
-    $names = [];
-    foreach ($ops->all() as $o) {
-        $names[(string) $o['extension']] = $ops->displayName((string) $o['extension']);
-    }
-    $queueNames = [];
-    foreach ($db->query('SELECT queue, name FROM queues')->fetchAll(PDO::FETCH_ASSOC) as $q) {
-        $queueNames[(string) $q['queue']] = (string) $q['name'];
-    }
     $now = time();
-    $out = [
-        'ok' => true,
-        'error' => null,
-        'time' => date('H:i:s', $now),
-        'today' => (new TodayStats($db))->fetch(
+    $out = ['ok' => true, 'error' => null, 'time' => date('H:i:s', $now), 'today' => null,
+        'summary' => null, 'queues' => [], 'agents' => []];
+    $json = function (array $out): string {
+        // Caller names from trunks may be non-UTF-8 (e.g. cp1251): substitute, never fail.
+        $s = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($s === false) {
+            error_log('callstats live: json_encode failed: ' . json_last_error_msg());
+            $s = (string) json_encode(['ok' => false, 'error' => 'Ошибка формирования данных', 'time' => $out['time'],
+                'today' => null, 'summary' => null, 'queues' => [], 'agents' => []], JSON_UNESCAPED_UNICODE);
+        }
+        return $s;
+    };
+    try {
+        $names = $ops->displayNames();
+        $queueNames = [];
+        foreach ($db->query('SELECT queue, name FROM queues')->fetchAll(PDO::FETCH_ASSOC) as $q) {
+            $queueNames[(string) $q['queue']] = (string) $q['name'];
+        }
+        $out['today'] = (new TodayStats($db))->fetch(
             date('Y-m-d 00:00:00', $now),
             date('Y-m-d 23:59:59', $now),
             (int) $config->get('live.service_level_sec', 60)
-        ),
-        'summary' => null,
-        'queues' => [],
-        'agents' => [],
-    ];
+        );
+    } catch (Throwable $e) {
+        error_log('callstats live: ' . $e->getMessage());
+        $out['ok'] = false;
+        $out['error'] = 'Ошибка базы данных сервиса';
+        return $json($out);
+    }
     try {
         $user = (string) $config->get('ami.user', '');
         if ($user === '') {
@@ -218,9 +226,18 @@ $app->route('live_data', function (array $get, array $post) use ($config, $db, $
         );
         $ami->connect();
         try {
-            $queue = $ami->request('QueueStatus');
-            $channels = $ami->request('CoreShowChannels');
-            $hints = $ami->request('ExtensionStateList');
+            // Each list is optional: e.g. without app_queue QueueStatus errors, the rest still works.
+            $list = function (string $action) use ($ami): array {
+                try {
+                    return $ami->request($action);
+                } catch (RuntimeException $e) {
+                    error_log('callstats live: ' . $e->getMessage());
+                    return [];
+                }
+            };
+            $queue = $list('QueueStatus');
+            $channels = $list('CoreShowChannels');
+            $hints = $list('ExtensionStateList');
         } finally {
             $ami->close();
         }
@@ -234,7 +251,7 @@ $app->route('live_data', function (array $get, array $post) use ($config, $db, $
         $out['ok'] = false;
         $out['error'] = 'Нет связи с Asterisk: ' . $e->getMessage();
     }
-    return (string) json_encode($out, JSON_UNESCAPED_UNICODE);
+    return $json($out);
 });
 
 $app->route('operators', function (array $get, array $post) use ($app, $ops): string {

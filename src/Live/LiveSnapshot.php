@@ -131,7 +131,11 @@ class LiveSnapshot
 
         $out = [];
         foreach ($agents as $a) {
-            $out[] = $this->finish($a);
+            $a = $this->finish($a);
+            // Extensions outside every queue are not agents: shown only while on a call.
+            if ($a['in_queue'] || in_array($a['state'], ['talking', 'ringing', 'busy'], true)) {
+                $out[] = $a;
+            }
         }
         usort($out, function (array $x, array $y): int {
             return [self::ORDER[$x['state']], $x['ext']] <=> [self::ORDER[$y['state']], $y['ext']];
@@ -152,7 +156,9 @@ class LiveSnapshot
         }
         unset($queue);
         foreach ($out as $a) {
-            $summary[$a['state']]++;
+            if ($a['in_queue']) {
+                $summary[$a['state']]++;
+            }
         }
         $summary = [
             'waiting' => $summary['waiting'], 'longest_wait' => $summary['longest_wait'],
@@ -168,7 +174,10 @@ class LiveSnapshot
         return ['ext' => $ext, 'name' => (string) ($names[$ext] ?? $ext), 'in_queue' => false, 'queues' => []];
     }
 
-    /** Collapses the collected flags into one state; a live channel wins over queue/hint status. */
+    /**
+     * Collapses the collected flags into one state; a live channel wins over queue/hint status.
+     * Summary counters include queue members only.
+     */
     private function finish(array $a): array
     {
         $channel = $a['channel'] ?? null;
@@ -176,12 +185,12 @@ class LiveSnapshot
             $state = $channel;
         } elseif (!empty($a['ringing'])) {
             $state = 'ringing';
-        } elseif (!empty($a['paused'])) {
-            $state = 'paused';
         } elseif ($channel === 'busy') {
             $state = 'busy';
         } elseif (!empty($a['offline'])) {
-            $state = 'offline';
+            $state = 'offline'; // a paused operator whose phone is off is shown as offline
+        } elseif (!empty($a['paused'])) {
+            $state = 'paused';
         } elseif (!empty($a['busy'])) {
             $state = 'busy';
         } else {

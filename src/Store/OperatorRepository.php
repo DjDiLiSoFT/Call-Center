@@ -58,9 +58,21 @@ class OperatorRepository
         $st = $this->db->prepare('SELECT fpbx_name, custom_name FROM operators WHERE extension = ?');
         $st->execute([$ext]);
         $r = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$r) {
-            return $ext;
+        return $r ? self::nameOf($ext, $r) : $ext;
+    }
+
+    /** @return array<string, string> extension => display name, in one query */
+    public function displayNames(): array
+    {
+        $out = [];
+        foreach ($this->all() as $r) {
+            $out[(string) $r['extension']] = self::nameOf((string) $r['extension'], $r);
         }
+        return $out;
+    }
+
+    private static function nameOf(string $ext, array $r): string
+    {
         $custom = trim((string) $r['custom_name']);
         if ($custom !== '') {
             return $custom;
