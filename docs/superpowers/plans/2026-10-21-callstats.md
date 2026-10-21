@@ -114,7 +114,7 @@ tools/ (не в git): php/, mariadb/, composer.phar
 
 - [ ] **Step 1: Failing tests** (`QueueLogParserTest`):
   - `test_parses_ringnoanswer`: `"1792556228|1792556228.239671|1000|1010|RINGNOANSWER|0"` → `event='RINGNOANSWER'`, `agent='1010'`, `data=['0']`.
-  - `test_parses_enterqueue_with_empty_field`: `"1792549722|1792549722.239533|1000|NONE|ENTERQUEUE||905290506|1"` → `data=['', '905290506', '1']`.
+  - `test_parses_enterqueue_with_empty_field`: `"1792549722|1792549722.239533|1000|NONE|ENTERQUEUE||900000001|1"` → `data=['', '900000001', '1']`.
   - `test_returns_null_for_garbage`: `"abc"` и `""` → `null`.
 - [ ] **Step 2: Failing tests** (`QueueLogReaderTest`, временная папка + подкласс `StateRepository` в памяти):
   - `test_reads_only_new_lines`: 2 строки → `readNew()` = 2 события; дописать 1 → `readNew()` = 1.

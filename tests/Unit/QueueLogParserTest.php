@@ -18,8 +18,8 @@ class QueueLogParserTest extends TestCase
 
     public function test_parses_enterqueue_with_empty_field(): void
     {
-        $e = QueueLogParser::parse('1792549722|1792549722.239533|1000|NONE|ENTERQUEUE||905290506|1');
-        $this->assertSame(['', '905290506', '1'], $e->data);
+        $e = QueueLogParser::parse('1792549722|1792549722.239533|1000|NONE|ENTERQUEUE||900000001|1');
+        $this->assertSame(['', '900000001', '1'], $e->data);
     }
 
     public function test_returns_null_for_garbage(): void
