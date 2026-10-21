@@ -22,7 +22,7 @@ class App
     private $view;
     /** @var Auth */
     private $auth;
-    /** @var Csrf */
+    /** @var Csrf|null */
     private $csrf;
     /** @var array<string, callable> page => fn(array $get, array $post): string */
     private $routes = [];
@@ -52,6 +52,10 @@ class App
 
     public function csrf(): Csrf
     {
+        if ($this->csrf === null) {
+            $this->startSession([]);
+            $this->csrf = new Csrf($_SESSION);
+        }
         return $this->csrf;
     }
 
@@ -59,7 +63,8 @@ class App
     {
         $this->startSession($server);
         $this->auth = new Auth($this->db, $_SESSION);
-        $this->csrf = new Csrf($_SESSION);
+        $this->csrf = null;
+        $this->csrf();
 
         header('X-Frame-Options: DENY');
         header('X-Content-Type-Options: nosniff');
@@ -173,6 +178,7 @@ class App
             return;
         }
         $https = !empty($server['HTTPS']) && strtolower((string) $server['HTTPS']) !== 'off';
+        ini_set('session.use_strict_mode', '1');
         session_name('CALLSTATSSID');
         session_set_cookie_params([
             'lifetime' => 0,

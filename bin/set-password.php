@@ -18,6 +18,9 @@ function prompt(string $label, bool $hidden = false): string
     if ($hidden && DIRECTORY_SEPARATOR === '/' && function_exists('shell_exec')) {
         $stty = trim((string) @shell_exec('stty -g 2>/dev/null')) !== '';
         if ($stty) {
+            register_shutdown_function(function () {
+                @shell_exec('stty echo');
+            });
             @shell_exec('stty -echo');
         }
     }

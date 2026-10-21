@@ -48,6 +48,45 @@ class AuthTest extends DbTestCase
         $this->assertTrue($this->auth->attempt('admin', 'correct-horse', '10.0.0.3'));
     }
 
+    public function test_attempt_recorded_even_when_blocked_and_sixth_is_blocked(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            $this->auth->attempt('admin', 'bad', '10.0.0.7');
+        }
+        $this->assertFalse($this->auth->attempt('admin', 'correct-horse', '10.0.0.7'));
+        $n = (int) $this->db->query("SELECT COUNT(*) FROM login_attempts WHERE ip='10.0.0.7'")->fetchColumn();
+        $this->assertSame(6, $n);
+        // fifth attempt (correct) is still allowed: limit is 5 tries
+        $this->assertTrue($this->auth->attempt('admin', 'correct-horse', '10.0.0.8'));
+    }
+
+    public function test_session_expires_after_absolute_lifetime(): void
+    {
+        $t = time();
+        $this->auth->attempt('admin', 'correct-horse', '10.0.0.1', $t);
+        // keep active so only the absolute limit applies
+        for ($x = $t + 3600; $x <= $t + 43200; $x += 3600) {
+            $this->assertTrue($this->auth->check($x));
+        }
+        $this->assertFalse($this->auth->check($t + 43201));
+    }
+
+    public function test_session_expires_after_idle_timeout(): void
+    {
+        $t = time();
+        $this->auth->attempt('admin', 'correct-horse', '10.0.0.1', $t);
+        $this->assertTrue($this->auth->check($t + 7000));
+        $this->assertFalse($this->auth->check($t + 7000 + 7201));
+    }
+
+    public function test_login_resets_csrf_token(): void
+    {
+        $csrf = new Csrf($this->session);
+        $old = $csrf->token();
+        $this->auth->attempt('admin', 'correct-horse', '10.0.0.1');
+        $this->assertNotSame($old, $csrf->token());
+    }
+
     public function test_block_expires_after_window_and_success_clears_attempts(): void
     {
         $t = time();

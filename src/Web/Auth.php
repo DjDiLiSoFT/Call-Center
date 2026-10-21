@@ -9,6 +9,9 @@ class Auth
     public const MAX_FAILURES = 5;
     public const WINDOW_SECONDS = 900;
     private const PURGE_SECONDS = 86400;
+    public const MAX_LIFETIME = 43200; // 12 h absolute
+    public const IDLE_TIMEOUT = 7200;  // 2 h idle
+    private const KEY = 'callstats_auth';
 
     public const ERR_BAD = 'Неверный логин или пароль';
     public const ERR_BLOCKED = 'Слишком много попыток, подождите 15 минут';
@@ -45,9 +48,12 @@ class Auth
         $this->db->prepare('DELETE FROM login_attempts WHERE `at` < ?')
             ->execute([date('Y-m-d H:i:s', $now - self::PURGE_SECONDS)]);
 
+        // Record first, then count (including this attempt), so parallel requests cannot all slip under the limit.
+        $this->db->prepare('INSERT INTO login_attempts (ip, `at`) VALUES (?, ?)')
+            ->execute([$ip, date('Y-m-d H:i:s', $now)]);
         $st = $this->db->prepare('SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND `at` >= ?');
         $st->execute([$ip, date('Y-m-d H:i:s', $now - self::WINDOW_SECONDS)]);
-        if ((int) $st->fetchColumn() >= self::MAX_FAILURES) {
+        if ((int) $st->fetchColumn() > self::MAX_FAILURES) {
             $this->error = self::ERR_BLOCKED;
             return false;
         }
@@ -64,20 +70,28 @@ class Auth
             if (session_status() === PHP_SESSION_ACTIVE) {
                 session_regenerate_id(true);
             }
-            $this->session['auth'] = true;
-            $this->session['auth_user'] = $storedUser;
+            unset($this->session['csrf']); // fresh CSRF token for the new session
+            $this->session[self::KEY] = ['user' => $storedUser, 'login_at' => $now, 'last_at' => $now];
             $this->error = '';
             return true;
         }
 
-        $this->db->prepare('INSERT INTO login_attempts (ip, `at`) VALUES (?, ?)')
-            ->execute([$ip, date('Y-m-d H:i:s', $now)]);
         return false;
     }
 
-    public function check(): bool
+    public function check(?int $now = null): bool
     {
-        return !empty($this->session['auth']);
+        $now = $now ?? time();
+        $a = $this->session[self::KEY] ?? null;
+        if (!is_array($a) || !isset($a['login_at'], $a['last_at'])) {
+            return false;
+        }
+        if ($now - (int) $a['login_at'] > self::MAX_LIFETIME || $now - (int) $a['last_at'] > self::IDLE_TIMEOUT) {
+            unset($this->session[self::KEY]);
+            return false;
+        }
+        $this->session[self::KEY]['last_at'] = $now;
+        return true;
     }
 
     public function logout(): void
