@@ -49,8 +49,11 @@ $playLink = function (array $it) {
     if (empty($it['has_recording']) || $it['call_id'] === null) {
         return '';
     }
-    $id = (int) $it['call_id'];
-    return ' <a class="js-play play" href="?p=play&amp;id=' . $id . '" data-id="' . $id . '" title="Слушать запись">▶</a>';
+    return ' <span class="rec">' . $this->render('_play_cell', [
+        'id' => (int) $it['call_id'],
+        'status' => (string) ($it['rec_status'] ?? 'missing'),
+        'title' => $it['client'] . ', ' . substr((string) $it['at'], 0, 16),
+    ]) . '</span>';
 };
 $query = function (string $e) use ($period) {
     return http_build_query(array_merge(['p' => 'journal', 'ext' => $e], $period->query()));

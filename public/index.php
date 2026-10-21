@@ -51,7 +51,10 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
     ]);
 });
 
-$app->route('journal', function (array $get, array $post) use ($app, $db, $ops): string {
+$monitorRoot = (string) $config->get('monitor.path', '/var/spool/asterisk/monitor');
+$locator = new RecordingLocator($monitorRoot);
+
+$app->route('journal', function (array $get, array $post) use ($app, $db, $ops, $locator): string {
     $period = Period::fromRequest($get, time());
     $operators = [];
     foreach ($ops->all() as $o) {
@@ -66,6 +69,7 @@ $app->route('journal', function (array $get, array $post) use ($app, $db, $ops):
         $summary = $report['rows'][0] ?? null;
         $hasTimeline = $report['hasTimeline'];
         $items = OperatorJournal::collapseOffline((new OperatorJournal($db))->fetch($ext, $period));
+        $items = (new OperatorJournal($db))->withRecordingStatus($items, $locator);
     }
     return $app->view()->render('journal', [
         'period' => $period,
@@ -76,9 +80,6 @@ $app->route('journal', function (array $get, array $post) use ($app, $db, $ops):
         'items' => $items,
     ]);
 });
-
-$monitorRoot = (string) $config->get('monitor.path', '/var/spool/asterisk/monitor');
-$locator = new RecordingLocator($monitorRoot);
 
 $app->route('recordings', function (array $get, array $post) use ($app, $db, $ops, $locator): string {
     $period = Period::fromRequest($get, time());
@@ -125,7 +126,7 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
         'f' => $f,
         'rows' => $rows,
         'total' => $res['total'],
-        'page' => $page,
+        'page' => $res['page'],
     ]);
 });
 

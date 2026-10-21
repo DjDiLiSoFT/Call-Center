@@ -87,6 +87,43 @@ class OperatorJournalTest extends DbTestCase
         $this->assertSame('not_connected', $items[3]['reason']);
     }
 
+    public function test_recording_status_and_play_cell_states(): void
+    {
+        $root = sys_get_temp_dir() . '/cs_jrec_' . uniqid();
+        mkdir($root . '/2026/10/18', 0777, true);
+        file_put_contents($root . '/2026/10/18/ok.wav', str_repeat('x', 100));
+        file_put_contents($root . '/2026/10/18/empty.wav', str_repeat('x', 44));
+        file_put_contents($root . '/2026/10/18/odd.gsm', str_repeat('x', 100));
+        foreach (['ok.wav', 'empty.wav', 'odd.gsm', 'gone.wav'] as $i => $file) {
+            $t = sprintf('2026-10-18 10:%02d:00', $i);
+            $this->call('r' . $i, 'direct', null, $t, [
+                new AgentOutcome('1004', 'in', 'answered', 1, 60, $t, $t),
+            ], ['recordingFile' => $file]);
+        }
+        try {
+            $items = $this->journal()->fetch('1004', $this->period());
+            $items = $this->journal()->withRecordingStatus($items, new \CallStats\Web\RecordingLocator($root));
+            $this->assertSame(['ok', 'empty', 'unsupported', 'missing'], array_column($items, 'rec_status'));
+
+            $html = (new \CallStats\Web\View(dirname(__DIR__, 2) . '/templates'))->render('journal', [
+                'period' => $this->period(), 'operators' => ['1004' => '1004'], 'ext' => '1004',
+                'summary' => null, 'hasTimeline' => false, 'items' => $items,
+            ]);
+            $this->assertSame(1, substr_count($html, 'js-play'));
+            $this->assertSame(2, substr_count($html, '&amp;dl=1'));
+            $this->assertStringContainsString('запись пустая', $html);
+            $this->assertStringContainsString('файл не найден', $html);
+        } finally {
+            foreach (glob($root . '/2026/10/18/*') as $f) {
+                unlink($f);
+            }
+            rmdir($root . '/2026/10/18');
+            rmdir($root . '/2026/10');
+            rmdir($root . '/2026');
+            rmdir($root);
+        }
+    }
+
     public function test_other_answered_marked_in_other(): void
     {
         $this->call('k1', 'queue', '1000', '2026-10-18 10:00:00', [

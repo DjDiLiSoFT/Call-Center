@@ -3,6 +3,7 @@
 namespace CallStats\Report;
 
 use CallStats\Store\OperatorRepository;
+use CallStats\Web\RecordingLocator;
 use PDO;
 
 /**
@@ -134,6 +135,40 @@ class OperatorJournal
         });
         foreach ($items as &$it) {
             unset($it['_i']);
+        }
+        unset($it);
+        return $items;
+    }
+
+    /**
+     * Adds 'rec_status' (ok|empty|missing|unsupported) to every item that has a recording, using the
+     * same locator as the recordings page.
+     *
+     * @param array[] $items
+     * @return array[]
+     */
+    public function withRecordingStatus(array $items, RecordingLocator $locator): array
+    {
+        $ids = [];
+        foreach ($items as $it) {
+            if (!empty($it['has_recording']) && $it['call_id'] !== null) {
+                $ids[(int) $it['call_id']] = true;
+            }
+        }
+        $status = [];
+        foreach (array_chunk(array_keys($ids), 500) as $chunk) {
+            $st = $this->db->prepare(
+                'SELECT id, started_at, recording_file FROM calls WHERE id IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')'
+            );
+            $st->execute($chunk);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $status[(int) $r['id']] = $locator->locate((string) $r['started_at'], (string) $r['recording_file'])['status'];
+            }
+        }
+        foreach ($items as &$it) {
+            if (!empty($it['has_recording']) && $it['call_id'] !== null) {
+                $it['rec_status'] = $status[(int) $it['call_id']] ?? 'missing';
+            }
         }
         unset($it);
         return $items;

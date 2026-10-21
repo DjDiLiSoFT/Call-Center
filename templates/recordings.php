@@ -94,16 +94,7 @@ $pageUrl = function (int $n) use ($base) {
       <td><?= View::e($qname) ?></td>
       <td><?= View::e(Format::duration((int) $r['talk_sec'])) ?></td>
       <td class="rec">
-<?php if ($r['status'] === 'ok'): ?>
-        <a class="js-play play" href="?p=play&amp;id=<?= $id ?>" data-id="<?= $id ?>" data-title="<?= View::e($title) ?>" title="Слушать запись">▶</a>
-        <a class="dl" href="?p=play&amp;id=<?= $id ?>&amp;dl=1">скачать</a>
-<?php elseif ($r['status'] === 'empty'): ?>
-        <span class="muted">запись пустая</span>
-<?php elseif ($r['status'] === 'unsupported'): ?>
-        <a class="dl" href="?p=play&amp;id=<?= $id ?>&amp;dl=1">скачать</a>
-<?php else: ?>
-        <span class="muted">файл не найден</span>
-<?php endif; ?>
+<?= $this->render('_play_cell', ['id' => $id, 'status' => $r['status'], 'title' => $title]) ?>
       </td>
     </tr>
 <?php endforeach; ?>
