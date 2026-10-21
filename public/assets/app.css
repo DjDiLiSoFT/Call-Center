@@ -105,14 +105,18 @@ details.src pre { margin: .3rem 0 0; padding: .5rem; background: var(--bg); bord
 .live-fs { border: 1px solid var(--border); background: var(--surface); border-radius: 4px; padding: .35rem .8rem; font: inherit; cursor: pointer; }
 .live-h { font-size: var(--fs-lg); font-weight: 600; margin: 1.25rem 0 .5rem; color: #3e4c59; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 6px; padding: .75rem 1rem; display: flex; flex-direction: column; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .75rem 1rem; display: flex; flex-direction: column; }
 .tile-v { font-size: var(--fs-num); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .tile-l { color: var(--muted); font-size: var(--fs-sm); }
-.tile-wait { border-left-color: #d97706; }
-.tile-free { border-left-color: #16a34a; }
-.tile-talk { border-left-color: var(--accent); }
-.tile-pause { border-left-color: #9333ea; }
-.tile-off { border-left-color: #9aa5b1; }
+/* state identity: a dot before the label, same hues as the state badges */
+.tile-wait, .tile-free, .tile-talk, .tile-pause, .tile-off { --dot: transparent; }
+.tile-wait { --dot: #d97706; }
+.tile-free { --dot: #16a34a; }
+.tile-talk { --dot: var(--accent); }
+.tile-pause { --dot: #9333ea; }
+.tile-off { --dot: #9aa5b1; }
+.tile-wait .tile-l::before, .tile-free .tile-l::before, .tile-talk .tile-l::before, .tile-pause .tile-l::before, .tile-off .tile-l::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: .4rem; background: var(--dot); vertical-align: .05em; }
 .live.alarm .tile-wait { background: #fff4e5; }
 .live-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 1.25rem; }
 @media (max-width: 900px) { .live-cols { grid-template-columns: 1fr; } }
@@ -267,3 +271,10 @@ input, select, textarea, button { font-size: var(--fs-md); }
 .filters.compact label { font-size: var(--fs-sm); }
 .stats-section { margin-top: 1.25rem; }
 .filters input, .filters select { font-size: var(--fs-md); }
+
+/* Secondary buttons (row actions such as «Сохранить») */
+form.inline button, .btn-secondary { padding: .3rem .8rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface);
+  color: var(--text); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+form.inline button:hover, .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+td input[type=text] { margin: 0; padding: .3rem .5rem; }
+td input[type=text] { max-width: 320px; }
