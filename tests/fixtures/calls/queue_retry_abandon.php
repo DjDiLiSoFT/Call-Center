@@ -1,0 +1,21 @@
+<?php
+/*
+ * Queue call with two retry rounds, nobody answers, caller abandons.
+ * Modeled on real linkedid 1792556964.239786 (2026-10-21), trimmed to two rounds and to
+ * members 1001, 1002 (rang 15 s each round) and 1005 (offline, RINGNOANSWER|0).
+ * Customer number replaced by 900000002. Only queue_log is used (no CDR rows).
+ */
+return [
+    'cdr' => [],
+    'qlog' => [
+        '1792556964|1792556964.239786|1000|NONE|DID|552020515',
+        '1792556964|1792556964.239786|1000|NONE|ENTERQUEUE||900000002|1',
+        '1792556964|1792556964.239786|1000|1005|RINGNOANSWER|0',
+        '1792556979|1792556964.239786|1000|1002|RINGNOANSWER|15000',
+        '1792556979|1792556964.239786|1000|1001|RINGNOANSWER|15000',
+        '1792556984|1792556964.239786|1000|1005|RINGNOANSWER|0',
+        '1792556999|1792556964.239786|1000|1002|RINGNOANSWER|15000',
+        '1792556999|1792556964.239786|1000|1001|RINGNOANSWER|15000',
+        '1792557004|1792556964.239786|1000|NONE|ABANDON|1|1|40',
+    ],
+];
