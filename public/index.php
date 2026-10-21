@@ -102,10 +102,6 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
     $f = [
         'ext' => isset($operators[$str('ext')]) ? $str('ext') : '',
         'number' => mb_substr($str('number'), 0, 40),
-        'min' => ctype_digit($str('min')) ? (string) min((int) $str('min'), 100000) : '',
-        'max' => ctype_digit($str('max')) ? (string) min((int) $str('max'), 100000) : '',
-        'dir' => in_array($str('dir'), ['in', 'out'], true) ? $str('dir') : '',
-        'queue' => isset($queues[$str('queue')]) ? $str('queue') : '',
     ];
     $page = ctype_digit($str('page')) ? max(1, (int) $str('page')) : 1;
     $t = [
@@ -117,10 +113,10 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
         $period,
         $f['ext'] !== '' ? $f['ext'] : null,
         $f['number'] !== '' ? $f['number'] : null,
-        $f['min'] !== '' ? (int) $f['min'] * 60 : null,
-        $f['max'] !== '' ? (int) $f['max'] * 60 + 59 : null,
-        $f['dir'] !== '' ? $f['dir'] : null,
-        $f['queue'] !== '' ? $f['queue'] : null,
+        null,
+        null,
+        null,
+        null,
         $page,
         $t['sort'],
         $t['order'],

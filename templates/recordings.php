@@ -5,11 +5,11 @@ use CallStats\Web\View;
 /** @var \CallStats\Report\Period $period */
 /** @var array $operators extension => display name */
 /** @var array $queues queue => name */
-/** @var array $f filters: ext, number, min, max, dir, queue (strings as typed) */
+/** @var array $f filters: ext, number (strings as typed) */
 /** @var array[] $rows search rows + 'status' (ok|empty|missing|unsupported) + 'operator' */
 /** @var array $res RecordingSearch::search() result (page, pages, from, to, total) */
 /** @var array $t ['sort','order','per'] */
-$filters = array_filter(['ext' => $f['ext'], 'min' => $f['min'], 'max' => $f['max'], 'dir' => $f['dir'], 'queue' => $f['queue']],
+$filters = array_filter(['ext' => $f['ext']],
     function ($v) {
         return $v !== '';
     });
@@ -31,7 +31,7 @@ $dirTitle = ['queue' => 'входящий', 'direct' => 'входящий', 'out
   <input type="hidden" name="p" value="recordings">
   <input type="hidden" name="number" value="<?= View::e($f['number']) ?>">
   <label>Оператор
-    <select name="ext">
+    <select name="ext" data-autosubmit>
       <option value="">— все —</option>
 <?php foreach ($operators as $e => $name): ?>
       <option value="<?= View::e($e) ?>"<?= (string) $e === $f['ext'] ? ' selected' : '' ?>><?= View::e($e . ($name !== (string) $e ? ' — ' . $name : '')) ?></option>
@@ -39,27 +39,6 @@ $dirTitle = ['queue' => 'входящий', 'direct' => 'входящий', 'out
     </select>
   </label>
 <?= $this->render('_period_fields', ['period' => $period]) ?>
-  <label>Длительность от, мин
-    <input type="number" name="min" min="0" step="1" value="<?= View::e($f['min']) ?>">
-  </label>
-  <label>до, мин
-    <input type="number" name="max" min="0" step="1" value="<?= View::e($f['max']) ?>">
-  </label>
-  <label>Направление
-    <select name="dir">
-      <option value="">все</option>
-      <option value="in"<?= $f['dir'] === 'in' ? ' selected' : '' ?>>входящие</option>
-      <option value="out"<?= $f['dir'] === 'out' ? ' selected' : '' ?>>исходящие</option>
-    </select>
-  </label>
-  <label>Очередь
-    <select name="queue">
-      <option value="">— все —</option>
-<?php foreach ($queues as $q => $name): ?>
-      <option value="<?= View::e($q) ?>"<?= (string) $q === $f['queue'] ? ' selected' : '' ?>><?= View::e($name !== '' ? $name : $q) ?></option>
-<?php endforeach; ?>
-    </select>
-  </label>
   <button type="submit" class="primary">Показать</button>
 </form>
 
