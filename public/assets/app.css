@@ -240,3 +240,11 @@ td.missed-high { color: var(--danger); font-weight: 600; }
 .linkish:hover { color: var(--accent); }
 tbody.inactive td { color: var(--muted); }
 table.sortable th, table.sortable td { padding: .5rem .5rem; }
+
+/* Stats: stacked sections (Сегодня / Вчера / 15 дней) */
+.stats-section { margin-top: 1.5rem; }
+.section-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem 1rem; margin: 0 0 .5rem;
+  padding: .6rem 1rem; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: 6px; font-size: 1.1rem; font-weight: 700; }
+.section-sub { font-size: .85rem; font-weight: 400; color: var(--muted); }
+.reset-link { align-self: center; margin-left: .5rem; font-size: .9rem; }

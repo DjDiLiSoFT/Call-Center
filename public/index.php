@@ -39,16 +39,36 @@ $app->route('dashboard', function (array $get, array $post) use ($app, $db, $ops
 
 $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): string {
     $now = time();
-    $period = Period::fromRequest($get, $now);
-    $prev = $period->previous($now);
     $stats = new OperatorStatsReport($db, $ops);
-    $report = $stats->fetch($period, null, [], $now);
-    return $app->view()->render('stats', [
-        'period' => $period,
-        'report' => $report,
-        'insights' => StatsInsights::build($report['rows'], $stats->fetch($prev, null, [], $now)['rows']),
-        'prevLabel' => date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to)),
-    ]);
+    $section = function (string $title, Period $p) use ($stats, $now): array {
+        $prev = $p->previous($now);
+        $report = $stats->fetch($p, null, [], $now);
+        return [
+            'title' => $title,
+            'period' => $p,
+            'report' => $report,
+            'insights' => StatsInsights::build($report['rows'], $stats->fetch($prev, null, [], $now)['rows']),
+            'prevLabel' => date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to)),
+        ];
+    };
+    // No period chosen: today, yesterday and the current half of the month, one under another.
+    $default = !isset($get['preset']);
+    if ($default) {
+        $months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября',
+            'октября', 'ноября', 'декабря'];
+        $half = Period::fromRequest(['preset' => 'half_month'], $now);
+        $sections = [
+            $section('Сегодня', Period::fromRequest(['preset' => 'today'], $now)),
+            $section('Вчера', Period::fromRequest(['preset' => 'yesterday'], $now)),
+            $section('С ' . (int) date('j', strtotime($half->from)) . ' по ' . (int) date('j', strtotime($half->to)) . ' '
+                . $months[(int) date('n', strtotime($half->from)) - 1], $half),
+        ];
+        $period = Period::fromRequest([], $now);
+    } else {
+        $period = Period::fromRequest($get, $now);
+        $sections = [$section(Period::PRESETS[$period->preset] ?? 'Период', $period)];
+    }
+    return $app->view()->render('stats', ['period' => $period, 'sections' => $sections, 'default' => $default]);
 });
 
 $monitorRoot = (string) $config->get('monitor.path', '/var/spool/asterisk/monitor');
