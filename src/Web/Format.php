@@ -1,0 +1,13 @@
+<?php
+
+namespace CallStats\Web;
+
+class Format
+{
+    /** Seconds -> h:mm:ss (1:05:09, 0:05:09). */
+    public static function duration(int $sec): string
+    {
+        $sec = max(0, $sec);
+        return sprintf('%d:%02d:%02d', intdiv($sec, 3600), intdiv($sec % 3600, 60), $sec % 60);
+    }
+}
