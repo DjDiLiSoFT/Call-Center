@@ -19,13 +19,8 @@ $url = function (array $over = []) use ($base, $t, $table): string {
     });
     return '?' . http_build_query($q);
 };
-// Clicking a sortable header: same column flips the order, a new column starts descending.
 $sortLink = function (string $col, string $label) use ($t, $url): string {
-    $active = $t['sort'] === $col;
-    $order = $active && $t['order'] === 'desc' ? 'asc' : 'desc';
-    $arrow = $active ? ($t['order'] === 'desc' ? ' ▼' : ' ▲') : ' <span class="sort-off">⇅</span>';
-    return '<a class="th-sort" href="' . View::e($url(['sort' => $col, 'order' => $order, 'page' => 1])) . '">'
-        . View::e($label) . $arrow . '</a>';
+    return $this->render('_sort_link', ['url' => $url, 'sort' => $t['sort'], 'order' => $t['order'], 'col' => $col, 'label' => $label]);
 };
 $sourcesBlock = function (?string $json) {
     if ($json === null || $json === '') {
@@ -164,39 +159,7 @@ $arrowTitles = ['in' => 'входящий', 'out' => 'исходящий', 'inte
   </div>
 <?php endif; ?>
 
-  <footer class="history-foot">
-    <form method="get" action="" class="per-page">
-<?php foreach ($base as $k => $v): ?>
-      <input type="hidden" name="<?= View::e($k) ?>" value="<?= View::e((string) $v) ?>">
-<?php endforeach; ?>
-      <input type="hidden" name="q" value="<?= View::e($t['q']) ?>">
-      <input type="hidden" name="sort" value="<?= View::e($t['sort']) ?>">
-      <input type="hidden" name="order" value="<?= View::e($t['order']) ?>">
-      Показано <?= (int) $table['from'] ?>–<?= (int) $table['to'] ?> из <?= (int) $table['total'] ?>, по
-      <select name="per" data-autosubmit aria-label="Строк на странице">
-<?php foreach (JournalTable::PER_PAGE as $n): ?>
-        <option value="<?= $n ?>"<?= $n === (int) $t['per'] ? ' selected' : '' ?>><?= $n ?></option>
-<?php endforeach; ?>
-      </select>
-      строк на странице
-    </form>
-<?php if ($table['pages'] > 1):
-    $p = $table['page'];
-    $last = $table['pages'];
-    $show = array_unique(array_filter([1, $p - 2, $p - 1, $p, $p + 1, $p + 2, $last], function ($n) use ($last) {
-        return $n >= 1 && $n <= $last;
-    }));
-    sort($show); ?>
-    <nav class="pager" aria-label="Страницы">
-      <a class="pg<?= $p === 1 ? ' off' : '' ?>" href="<?= View::e($url(['page' => max(1, $p - 1)])) ?>" aria-label="Предыдущая">‹</a>
-<?php $prev = 0; foreach ($show as $n): ?>
-<?php if ($n - $prev > 1): ?>      <span class="pg gap">…</span>
-<?php endif; ?>
-      <a class="pg<?= $n === $p ? ' on' : '' ?>" href="<?= View::e($url(['page' => $n])) ?>"<?= $n === $p ? ' aria-current="page"' : '' ?>><?= $n ?></a>
-<?php $prev = $n; endforeach; ?>
-      <a class="pg<?= $p === $last ? ' off' : '' ?>" href="<?= View::e($url(['page' => min($last, $p + 1)])) ?>" aria-label="Следующая">›</a>
-    </nav>
-<?php endif; ?>
-  </footer>
+<?= $this->render('_pager', ['url' => $url, 'res' => $table, 'per' => (int) $t['per'],
+    'hidden' => array_merge($base, ['q' => $t['q'], 'sort' => $t['sort'], 'order' => $t['order']])]) ?>
 </section>
 <?php endif; ?>

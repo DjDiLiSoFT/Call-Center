@@ -1,5 +1,4 @@
 <?php
-use CallStats\Report\RecordingSearch;
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
@@ -8,23 +7,29 @@ use CallStats\Web\View;
 /** @var array $queues queue => name */
 /** @var array $f filters: ext, number, min, max, dir, queue (strings as typed) */
 /** @var array[] $rows search rows + 'status' (ok|empty|missing|unsupported) + 'operator' */
-/** @var int $total */
-/** @var int $page */
-$pages = max(1, (int) ceil($total / RecordingSearch::PER_PAGE));
-$dirLabel = ['queue' => 'входящий', 'direct' => 'входящий', 'outbound' => 'исходящий', 'internal' => 'внутренний'];
-$base = array_merge(
-    ['p' => 'recordings'],
-    $period->query(),
-    array_filter($f, function ($v) {
+/** @var array $res RecordingSearch::search() result (page, pages, from, to, total) */
+/** @var array $t ['sort','order','per'] */
+$filters = array_filter(['ext' => $f['ext'], 'min' => $f['min'], 'max' => $f['max'], 'dir' => $f['dir'], 'queue' => $f['queue']],
+    function ($v) {
         return $v !== '';
-    })
-);
-$pageUrl = function (int $n) use ($base) {
-    return '?' . http_build_query(array_merge($base, ['page' => $n]));
+    });
+$base = array_merge(['p' => 'recordings'], $period->query(), $filters);
+$url = function (array $over = []) use ($base, $f, $t, $res): string {
+    $q = array_merge($base, ['number' => $f['number'], 'sort' => $t['sort'], 'order' => $t['order'], 'per' => $t['per'],
+        'page' => $res['page']], $over);
+    return '?' . http_build_query(array_filter($q, function ($v) {
+        return $v !== '' && $v !== null;
+    }));
 };
+$sortLink = function (string $col, string $label) use ($t, $url): string {
+    return $this->render('_sort_link', ['url' => $url, 'sort' => $t['sort'], 'order' => $t['order'], 'col' => $col, 'label' => $label]);
+};
+$arrows = ['queue' => '←', 'direct' => '←', 'outbound' => '→', 'internal' => '⇄'];
+$dirTitle = ['queue' => 'входящий', 'direct' => 'входящий', 'outbound' => 'исходящий', 'internal' => 'внутренний'];
 ?>
 <form method="get" action="" class="filters card">
   <input type="hidden" name="p" value="recordings">
+  <input type="hidden" name="number" value="<?= View::e($f['number']) ?>">
   <label>Оператор
     <select name="ext">
       <option value="">— все —</option>
@@ -34,9 +39,6 @@ $pageUrl = function (int $n) use ($base) {
     </select>
   </label>
 <?= $this->render('_period_fields', ['period' => $period]) ?>
-  <label>Номер клиента
-    <input type="text" name="number" value="<?= View::e($f['number']) ?>" placeholder="часть номера">
-  </label>
   <label>Длительность от, мин
     <input type="number" name="min" min="0" step="1" value="<?= View::e($f['min']) ?>">
   </label>
@@ -58,59 +60,82 @@ $pageUrl = function (int $n) use ($base) {
 <?php endforeach; ?>
     </select>
   </label>
-  <button type="submit" class="primary">Найти</button>
+  <button type="submit" class="primary">Показать</button>
 </form>
 
-<p class="muted">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?>. Найдено записей: <?= (int) $total ?></p>
+<section class="history card">
+  <header class="history-head">
+    <div>
+      <div class="history-title"><?= View::e($f['ext'] !== '' ? $f['ext'] . (($operators[$f['ext']] ?? $f['ext']) !== $f['ext'] ? ' — ' . $operators[$f['ext']] : '') : 'Все операторы') ?></div>
+      <div class="history-sub">записи разговоров · <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?></div>
+    </div>
+    <form method="get" action="" class="history-tools">
+<?php foreach ($base as $k => $v): ?>
+      <input type="hidden" name="<?= View::e((string) $k) ?>" value="<?= View::e((string) $v) ?>">
+<?php endforeach; ?>
+      <input type="hidden" name="sort" value="<?= View::e($t['sort']) ?>">
+      <input type="hidden" name="order" value="<?= View::e($t['order']) ?>">
+      <input type="hidden" name="per" value="<?= (int) $t['per'] ?>">
+      <input type="search" name="number" value="<?= View::e($f['number']) ?>" placeholder="Поиск по номеру" aria-label="Поиск по номеру">
+      <button type="submit" class="tool" title="Найти" aria-label="Найти">⌕</button>
+      <a class="tool" href="<?= View::e($url()) ?>" title="Обновить" aria-label="Обновить">⟳</a>
+    </form>
+  </header>
 
 <?php if (!$rows): ?>
-<p class="muted">Записей по выбранным условиям нет.</p>
+  <p class="muted history-empty">Записей по выбранным условиям нет.</p>
 <?php else: ?>
-<div class="table-wrap">
-<table class="recordings">
-  <thead>
-    <tr>
-      <th>Дата и время</th>
-      <th>Направление</th>
-      <th>Номер клиента</th>
-      <th>Оператор</th>
-      <th>Очередь</th>
-      <th>Длительность</th>
-      <th>Запись</th>
-    </tr>
-  </thead>
-  <tbody>
+  <div class="table-wrap">
+  <table class="calls">
+    <thead>
+      <tr>
+        <th class="c-date"><?= $sortLink('at', 'Дата') ?></th>
+        <th>Описание</th>
+        <th class="c-dur"><?= $sortLink('dur', 'Длительность') ?></th>
+        <th class="c-play">Прослушать</th>
+        <th class="c-ctl">Скачать</th>
+      </tr>
+    </thead>
+    <tbody>
 <?php foreach ($rows as $r):
-    $id = (int) $r['id'];
-    $when = substr($r['started_at'], 8, 2) . '.' . substr($r['started_at'], 5, 2) . '.' . substr($r['started_at'], 0, 4) . ' ' . substr($r['started_at'], 11, 5);
-    $qname = $r['queue'] === null ? '' : ($queues[$r['queue']] ?? $r['queue']);
-    $title = $when . ', ' . $r['client_number'] . ($r['operator'] !== '' ? ', ' . $r['operator'] : '');
+    $kind = (string) $r['kind'];
+    $qname = $r['queue'] === null ? '' : 'Очередь «' . ($queues[$r['queue']] ?? $r['queue']) . '»';
+    $note = implode(' · ', array_filter([(string) $r['operator'], $qname]));
 ?>
-    <tr>
-      <td><?= View::e($when) ?></td>
-      <td><?= View::e($dirLabel[$r['kind']] ?? $r['kind']) ?></td>
-      <td><?= View::e($r['client_number']) ?></td>
-      <td><?= View::e($r['operator']) ?></td>
-      <td><?= View::e($qname) ?></td>
-      <td><?= View::e(Format::duration((int) $r['talk_sec'])) ?></td>
-      <td class="rec">
-<?= $this->render('_play_cell', ['id' => $id, 'status' => $r['status'], 'title' => $title]) ?>
-      </td>
-    </tr>
-<?php endforeach; ?>
-  </tbody>
-</table>
-</div>
-<?php if ($pages > 1): ?>
-<nav class="pager" aria-label="Страницы">
-<?php for ($n = 1; $n <= $pages; $n++): ?>
-<?php if ($n === $page): ?>
-  <span class="cur" aria-current="page"><?= $n ?></span>
+      <tr>
+        <td class="c-date"><?= View::e(Format::ruDateTime((string) $r['started_at'])) ?></td>
+        <td class="c-desc">
+          <span class="dir" title="<?= View::e($dirTitle[$kind] ?? $kind) ?>"><?= $arrows[$kind] ?? '' ?></span>
+          <span class="num"><?= View::e($r['client_number'] !== '' ? (string) $r['client_number'] : 'номер скрыт') ?></span>
+<?php if ($note !== ''): ?>
+          <span class="note"><?= View::e($note) ?></span>
+<?php endif; ?>
+        </td>
+        <td class="c-dur"><?= View::e(Format::humanDuration((int) $r['talk_sec'])) ?></td>
+        <td class="c-play">
+<?php if ($r['status'] === 'ok'): ?>
+<?= $this->render('_row_player', ['id' => (int) $r['id']]) ?>
+<?php elseif ($r['status'] === 'empty'): ?>
+          <span class="muted">запись пустая</span>
+<?php elseif ($r['status'] === 'missing'): ?>
+          <span class="muted">файл не найден</span>
 <?php else: ?>
-  <a href="<?= View::e($pageUrl($n)) ?>"><?= $n ?></a>
+          <span class="muted">формат не поддерживается</span>
 <?php endif; ?>
-<?php endfor; ?>
-</nav>
+        </td>
+        <td class="c-ctl">
+<?php if ($r['status'] === 'ok' || $r['status'] === 'unsupported'): ?>
+          <a class="dl-icon" href="?p=play&amp;id=<?= (int) $r['id'] ?>&amp;dl=1" title="Скачать запись" aria-label="Скачать запись">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v11m0 0l-4-4m4 4l4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
 <?php endif; ?>
+        </td>
+      </tr>
+<?php endforeach; ?>
+    </tbody>
+  </table>
+  </div>
 <?php endif; ?>
-<?= $this->render('_player') ?>
+<?= $this->render('_pager', ['url' => $url, 'res' => $res, 'per' => (int) $t['per'],
+    'hidden' => array_merge($base, ['number' => $f['number'], 'sort' => $t['sort'], 'order' => $t['order']])]) ?>
+</section>

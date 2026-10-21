@@ -104,4 +104,22 @@ class RecordingSearchTest extends DbTestCase
         $this->assertCount(5, $p2['rows']);
         $this->assertSame(55, $p2['total']);
     }
+
+    public function test_sort_by_duration_and_page_size(): void
+    {
+        $this->call('a', 'queue', '1000', '2026-10-18 09:00:00', '+998901110001', 300, 'a.wav', '1004');
+        $this->call('b', 'queue', '1000', '2026-10-18 10:00:00', '+998901110002', 100, 'b.wav', '1004');
+        $this->call('c', 'queue', '1000', '2026-10-18 11:00:00', '+998901110003', 200, 'c.wav', '1004');
+        $s = new RecordingSearch($this->db);
+
+        $asc = $s->search($this->period(), null, null, null, null, null, null, 1, 'dur', 'asc', 2);
+        $this->assertSame(['+998901110002', '+998901110003'], $this->numbers($asc));
+        $this->assertSame(2, $asc['pages']);
+        $this->assertSame(1, $asc['from']);
+        $this->assertSame(2, $asc['to']);
+
+        $oldFirst = $s->search($this->period(), null, null, null, null, null, null, 2, 'at', 'asc', 2);
+        $this->assertSame(['+998901110003'], $this->numbers($oldFirst));
+        $this->assertSame(3, $oldFirst['from']);
+    }
 }

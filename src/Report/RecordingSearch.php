@@ -22,7 +22,10 @@ class RecordingSearch
     /**
      * @param string|null $ext operator extension (calls he answered), null = everybody
      * @param string|null $direction 'in' (queue/direct), 'out' (outbound), null/'all' = all kinds
-     * @return array{rows: array[], total: int, page: int} page is clamped to the last page
+     * @param string $sort 'at' (start time) | 'dur' (talk time)
+     * @param string $order 'asc' | 'desc'
+     * @return array{rows: array[], total: int, page: int, pages: int, from: int, to: int}
+     *         page is clamped to the last page
      */
     public function search(
         Period $p,
@@ -32,7 +35,10 @@ class RecordingSearch
         ?int $maxSec,
         ?string $direction,
         ?string $queue,
-        int $page
+        int $page,
+        string $sort = 'at',
+        string $order = 'desc',
+        int $perPage = self::PER_PAGE
     ): array {
         $where = ['c.started_at BETWEEN ? AND ?', 'c.recording_file IS NOT NULL', "c.recording_file <> ''"];
         $args = [$p->from, $p->to];
@@ -68,13 +74,22 @@ class RecordingSearch
         $st->execute($args);
         $total = (int) $st->fetchColumn();
 
-        $page = min(max(1, $page), max(1, (int) ceil($total / self::PER_PAGE)));
+        $perPage = max(1, $perPage);
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page = min(max(1, $page), $pages);
+        $dir = $order === 'asc' ? 'ASC' : 'DESC';
+        $orderBy = $sort === 'dur' ? "c.talk_sec $dir, c.started_at $dir" : "c.started_at $dir";
         $st = $this->db->prepare(
             'SELECT c.id, c.started_at, c.kind, c.queue, c.client_number, c.talk_sec, c.answered_by, c.recording_file'
-            . " FROM calls c WHERE $w ORDER BY c.started_at DESC, c.id DESC LIMIT " . self::PER_PAGE
-            . ' OFFSET ' . (($page - 1) * self::PER_PAGE)
+            . " FROM calls c WHERE $w ORDER BY $orderBy, c.id $dir LIMIT " . $perPage
+            . ' OFFSET ' . (($page - 1) * $perPage)
         );
         $st->execute($args);
-        return ['rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'total' => $total, 'page' => $page];
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        return [
+            'rows' => $rows, 'total' => $total, 'page' => $page, 'pages' => $pages,
+            'from' => $total > 0 ? ($page - 1) * $perPage + 1 : 0,
+            'to' => $total > 0 ? ($page - 1) * $perPage + count($rows) : 0,
+        ];
     }
 }

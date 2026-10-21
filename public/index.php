@@ -130,6 +130,11 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
         'queue' => isset($queues[$str('queue')]) ? $str('queue') : '',
     ];
     $page = ctype_digit($str('page')) ? max(1, (int) $str('page')) : 1;
+    $t = [
+        'sort' => $str('sort') === 'dur' ? 'dur' : 'at',
+        'order' => $str('order') === 'asc' ? 'asc' : 'desc',
+        'per' => in_array((int) $str('per'), JournalTable::PER_PAGE, true) ? (int) $str('per') : 50,
+    ];
     $res = (new RecordingSearch($db))->search(
         $period,
         $f['ext'] !== '' ? $f['ext'] : null,
@@ -138,7 +143,10 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
         $f['max'] !== '' ? (int) $f['max'] * 60 + 59 : null,
         $f['dir'] !== '' ? $f['dir'] : null,
         $f['queue'] !== '' ? $f['queue'] : null,
-        $page
+        $page,
+        $t['sort'],
+        $t['order'],
+        $t['per']
     );
     $rows = [];
     foreach ($res['rows'] as $r) {
@@ -152,8 +160,8 @@ $app->route('recordings', function (array $get, array $post) use ($app, $db, $op
         'queues' => $queues,
         'f' => $f,
         'rows' => $rows,
-        'total' => $res['total'],
-        'page' => $res['page'],
+        'res' => $res,
+        't' => $t,
     ]);
 });
 
