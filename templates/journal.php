@@ -153,3 +153,4 @@ $client = $it['client'] ?? '';
 </div>
 <?php endif; ?>
 <?php endif; ?>
+<?= $this->render('_player') ?>
