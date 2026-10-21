@@ -10,6 +10,7 @@ class Period
     public const PRESETS = [
         'today' => 'Сегодня',
         'yesterday' => 'Вчера',
+        'half_month' => '15 дней',
         'this_week' => 'Эта неделя',
         'last_week' => 'Прошлая неделя',
         'this_month' => 'Этот месяц',
@@ -40,6 +41,11 @@ class Period
             case 'yesterday':
                 $d = date('Y-m-d', strtotime('-1 day', $nowTs));
                 return new Period('yesterday', $d, $d);
+            case 'half_month':
+                // Current half of the month: days 1–15, or 16 to the end of the month.
+                return (int) date('j', $nowTs) <= 15
+                    ? new Period('half_month', date('Y-m-01', $nowTs), date('Y-m-15', $nowTs))
+                    : new Period('half_month', date('Y-m-16', $nowTs), date('Y-m-t', $nowTs));
             case 'this_week':
                 $mon = self::monday($nowTs);
                 return new Period('this_week', $mon, date('Y-m-d', strtotime($mon . ' +6 days')));
@@ -100,12 +106,20 @@ class Period
      */
     public function previous(int $nowTs): Period
     {
-        $days = (int) round((strtotime($this->toDate()) - strtotime($this->fromDate())) / 86400) + 1;
-        $prev = new Period(
-            'custom',
-            date('Y-m-d', strtotime($this->fromDate() . " -$days days")),
-            date('Y-m-d', strtotime($this->fromDate() . ' -1 day'))
-        );
+        if ($this->preset === 'half_month') {
+            // The previous half of the month: 16–end of last month before 1–15, 1–15 before 16–end.
+            $f = strtotime($this->fromDate());
+            $prev = (int) date('j', $f) === 1
+                ? new Period('custom', date('Y-m-16', strtotime('-1 day', $f)), date('Y-m-t', strtotime('-1 day', $f)))
+                : new Period('custom', date('Y-m-01', $f), date('Y-m-15', $f));
+        } else {
+            $days = (int) round((strtotime($this->toDate()) - strtotime($this->fromDate())) / 86400) + 1;
+            $prev = new Period(
+                'custom',
+                date('Y-m-d', strtotime($this->fromDate() . " -$days days")),
+                date('Y-m-d', strtotime($this->fromDate() . ' -1 day'))
+            );
+        }
         $start = strtotime($this->from);
         if ($nowTs >= $start && $nowTs <= strtotime($this->to)) {
             $prev->to = date('Y-m-d H:i:s', strtotime($prev->from) + ($nowTs - $start));

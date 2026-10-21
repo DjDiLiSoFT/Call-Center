@@ -36,6 +36,35 @@ class PeriodTest extends TestCase
         $this->assertSame('2026-10-06', $prev->fromDate());
     }
 
+    public function test_half_month_is_1_to_15_or_16_to_end(): void
+    {
+        $first = Period::fromRequest(['preset' => 'half_month'], mktime(9, 0, 0, 10, 10, 2026));
+        $this->assertSame('2026-10-01 00:00:00', $first->from);
+        $this->assertSame('2026-10-15 23:59:59', $first->to);
+
+        $second = Period::fromRequest(['preset' => 'half_month'], $this->now); // 21 Oct
+        $this->assertSame('2026-10-16 00:00:00', $second->from);
+        $this->assertSame('2026-10-31 23:59:59', $second->to);
+
+        $feb = Period::fromRequest(['preset' => 'half_month'], mktime(9, 0, 0, 2, 20, 2026));
+        $this->assertSame('2026-02-28 23:59:59', $feb->to);
+        $this->assertArrayHasKey('half_month', Period::PRESETS);
+        $this->assertSame(['today', 'yesterday', 'half_month'], array_slice(array_keys(Period::PRESETS), 0, 3));
+    }
+
+    public function test_previous_of_half_month_is_the_previous_half(): void
+    {
+        $at = mktime(12, 0, 0, 10, 10, 2026); // 1..15 Oct running, 9.5 days elapsed
+        $prev = Period::fromRequest(['preset' => 'half_month'], $at)->previous($at);
+        $this->assertSame('2026-09-16 00:00:00', $prev->from);
+        $this->assertSame('2026-09-25 12:00:00', $prev->to);
+
+        $done = mktime(12, 0, 0, 11, 2, 2026);
+        $prevDone = Period::fromRequest(['preset' => 'half_month'], mktime(9, 0, 0, 10, 20, 2026))->previous($done);
+        $this->assertSame('2026-10-01 00:00:00', $prevDone->from);
+        $this->assertSame('2026-10-15 23:59:59', $prevDone->to);
+    }
+
     public function test_default_is_today(): void
     {
         $p = Period::fromRequest([], $this->now);
