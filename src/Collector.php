@@ -276,6 +276,7 @@ class Collector
             (int) $this->cfg->get('collector.queue_ring_timeout', 15),
             (int) $this->cfg->get('collector.direct_ring_timeout', 20)
         );
+        sort($ids, SORT_STRING); // tight calldate window per batch
         $built = 0;
         $empty = 0;
         $keys = [];

@@ -53,7 +53,7 @@ $reasonTitle = function (array $r) {
 
 <p class="muted">Период: <?= View::e($period->fromDate()) ?> — <?= View::e($period->toDate()) ?></p>
 <?php if ($report['hasApprox']): ?>
-<p class="notice">часть данных до 22.09.2026 приблизительная</p>
+<p class="notice">часть данных за выбранный период приблизительная</p>
 <?php endif; ?>
 
 <?php if (!$report['rows']): ?>

@@ -65,6 +65,7 @@ class CdrSource
     {
         $out = [];
         $linkedids = array_values(array_unique(array_map('strval', $linkedids)));
+        sort($linkedids, SORT_STRING); // tight calldate window per batch
         foreach (array_chunk($linkedids, self::BATCH) as $batch) {
             $sql = 'SELECT * FROM cdr WHERE linkedid IN (' . implode(',', array_fill(0, count($batch), '?')) . ')';
             $params = $batch;

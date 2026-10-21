@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS `calls` (
   `answered_at` DATETIME NULL,
   `ended_at` DATETIME NOT NULL,
   `client_number` VARCHAR(80) NOT NULL DEFAULT '',
-  `answered_by` VARCHAR(20) NULL,
+  `answered_by` VARCHAR(80) NULL,
   `wait_sec` INT NOT NULL DEFAULT 0,
   `talk_sec` INT NOT NULL DEFAULT 0,
   `recording_file` VARCHAR(255) NULL,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS `calls` (
 CREATE TABLE IF NOT EXISTS `call_agents` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `call_id` INT NOT NULL,
-  `extension` VARCHAR(20) NOT NULL,
+  `extension` VARCHAR(80) NOT NULL,
   `direction` ENUM('in','out') NOT NULL,
   `outcome` ENUM('answered','missed','other_answered','caller_hangup','offline','not_connected') NOT NULL,
   `ring_sec` INT NOT NULL DEFAULT 0,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `call_agents` (
 CREATE TABLE IF NOT EXISTS `transfers` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `call_id` INT NOT NULL,
-  `from_ext` VARCHAR(20) NOT NULL,
+  `from_ext` VARCHAR(80) NOT NULL,
   `to_ext` VARCHAR(80) NOT NULL,
   `at` DATETIME NOT NULL,
   PRIMARY KEY (`id`),
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS `transfers` (
 
 CREATE TABLE IF NOT EXISTS `agent_sessions` (
   `id` INT NOT NULL AUTO_INCREMENT,
-  `extension` VARCHAR(20) NOT NULL,
+  `extension` VARCHAR(80) NOT NULL,
   `queue` VARCHAR(40) NOT NULL,
   `start_at` DATETIME NOT NULL,
   `end_at` DATETIME NULL,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS `agent_sessions` (
 
 CREATE TABLE IF NOT EXISTS `agent_pauses` (
   `id` INT NOT NULL AUTO_INCREMENT,
-  `extension` VARCHAR(20) NOT NULL,
+  `extension` VARCHAR(80) NOT NULL,
   `queue` VARCHAR(40) NOT NULL,
   `start_at` DATETIME NOT NULL,
   `end_at` DATETIME NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS `agent_pauses` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `operators` (
-  `extension` VARCHAR(20) NOT NULL,
+  `extension` VARCHAR(80) NOT NULL,
   `fpbx_name` VARCHAR(80) NOT NULL DEFAULT '',
   `custom_name` VARCHAR(80) NULL,
   PRIMARY KEY (`extension`)
