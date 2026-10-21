@@ -227,17 +227,25 @@ $app->route('live_data', function (array $get, array $post) use ($config, $db, $
         $ami->connect();
         try {
             // Each list is optional: e.g. without app_queue QueueStatus errors, the rest still works.
-            $list = function (string $action) use ($ami): array {
+            $failed = [];
+            $list = function (string $action) use ($ami, &$failed): array {
                 try {
                     return $ami->request($action);
                 } catch (RuntimeException $e) {
                     error_log('callstats live: ' . $e->getMessage());
+                    $failed[] = $e->getMessage();
                     return [];
                 }
             };
             $queue = $list('QueueStatus');
             $channels = $list('CoreShowChannels');
             $hints = $list('ExtensionStateList');
+            if (count($failed) === 3) {
+                throw new RuntimeException($failed[0]);
+            }
+            if ($failed) {
+                $out['error'] = 'Часть данных Asterisk недоступна: ' . implode('; ', $failed);
+            }
         } finally {
             $ami->close();
         }
