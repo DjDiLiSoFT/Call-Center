@@ -22,7 +22,7 @@ class RecordingSearch
     /**
      * @param string|null $ext operator extension (calls he answered), null = everybody
      * @param string|null $direction 'in' (queue/direct), 'out' (outbound), null/'all' = all kinds
-     * @return array{rows: array[], total: int}
+     * @return array{rows: array[], total: int, page: int} page is clamped to the last page
      */
     public function search(
         Period $p,
@@ -68,13 +68,13 @@ class RecordingSearch
         $st->execute($args);
         $total = (int) $st->fetchColumn();
 
-        $page = max(1, $page);
+        $page = min(max(1, $page), max(1, (int) ceil($total / self::PER_PAGE)));
         $st = $this->db->prepare(
             'SELECT c.id, c.started_at, c.kind, c.queue, c.client_number, c.talk_sec, c.answered_by, c.recording_file'
             . " FROM calls c WHERE $w ORDER BY c.started_at DESC, c.id DESC LIMIT " . self::PER_PAGE
             . ' OFFSET ' . (($page - 1) * self::PER_PAGE)
         );
         $st->execute($args);
-        return ['rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'total' => $total];
+        return ['rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'total' => $total, 'page' => $page];
     }
 }

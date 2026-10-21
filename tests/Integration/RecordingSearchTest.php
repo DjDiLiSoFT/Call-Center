@@ -65,6 +65,17 @@ class RecordingSearchTest extends DbTestCase
         $this->assertSame(['+998901110002'], $this->numbers($short));
     }
 
+    public function test_huge_page_is_clamped_to_last_page(): void
+    {
+        $this->call('a', 'queue', '1000', '2026-10-18 09:00:00', '+998901110001', 10, 'a.wav', '1004');
+        $res = (new RecordingSearch($this->db))->search($this->period(), null, null, null, null, null, null, PHP_INT_MAX);
+        $this->assertSame(1, $res['page']);
+        $this->assertCount(1, $res['rows']);
+        $empty = (new RecordingSearch($this->db))->search($this->period(), '9999', null, null, null, null, null, PHP_INT_MAX);
+        $this->assertSame(1, $empty['page']);
+        $this->assertSame([], $empty['rows']);
+    }
+
     public function test_operator_direction_queue_and_like_escaping(): void
     {
         $this->call('a', 'queue', '1000', '2026-10-18 09:00:00', '+99890111_001', 10, 'a.wav', '1004');
