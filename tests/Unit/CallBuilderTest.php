@@ -41,19 +41,115 @@ class CallBuilderTest extends TestCase
     private function fixture(string $name): array
     {
         $f = require __DIR__ . '/../fixtures/calls/' . $name . '.php';
+        return [$this->rows($f['cdr']), $this->events($f['qlog'])];
+    }
+
+    /** Expands compact fixture rows (FIXTURE_COLUMNS order) to full cdr rows of strings. */
+    private function rows(array $compact): array
+    {
         $rows = [];
-        foreach ($f['cdr'] as $values) {
+        foreach ($compact as $values) {
             $row = array_fill_keys(self::CDR_COLUMNS, '');
             foreach (array_combine(self::FIXTURE_COLUMNS, $values) as $k => $v) {
                 $row[$k] = (string) $v; // PDO returns strings
             }
             $rows[] = $row;
         }
-        $events = [];
-        foreach ($f['qlog'] as $line) {
-            $events[] = QueueLogParser::parse($line);
-        }
-        return [$rows, $events];
+        return $rows;
+    }
+
+    private function events(array $lines): array
+    {
+        return array_map([QueueLogParser::class, 'parse'], $lines);
+    }
+
+    /** ext-queues leg of linkedid 1792570000.1 to $ext (compact fixture row). */
+    private function queueLeg(string $ext, int $duration, string $disposition, int $seq): array
+    {
+        $id = '1792570000.1';
+        return ['2026-10-21 12:46:40', '900000010', '1000', 'ext-queues', 'PJSIP/552020515-0000a001',
+            "Local/{$ext}@from-queue-0000f00{$seq};1", $duration, $disposition === 'ANSWERED' ? $duration : 0,
+            $disposition, $id, '', $id, $seq];
+    }
+
+    public function test_queue_ringnoanswer_1000ms_is_offline(): void
+    {
+        $events = $this->events([
+            '1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1',
+            '1792570000|1792570000.1|1000|1005|RINGNOANSWER|1000',
+            '1792570015|1792570000.1|1000|1001|RINGNOANSWER|15000',
+            '1792570018|1792570000.1|1000|NONE|ABANDON|1|1|18',
+        ]);
+        $call = $this->builder->build('1792570000.1', [], $events);
+
+        $this->assertSame(['1001/in' => 'missed', '1005/in' => 'offline'], $this->outcomes($call));
+    }
+
+    public function test_queue_short_ringcanceled_with_failed_leg_is_offline(): void
+    {
+        // Answered by 1004; 1009 offline (all legs FAILED) but logs a short RINGCANCELED.
+        $rows = $this->rows([
+            $this->queueLeg('1009', 0, 'FAILED', 1),
+            $this->queueLeg('1002', 3, 'NO ANSWER', 2),
+            $this->queueLeg('1004', 3, 'ANSWERED', 3),
+        ]);
+        $events = $this->events([
+            '1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1',
+            '1792570003|1792570000.1|1000|1004|CONNECT|3|1792570000.5|3',
+            '1792570003|1792570000.1|1000|1009|RINGCANCELED|35',
+            '1792570003|1792570000.1|1000|1002|RINGCANCELED|35',
+            '1792570033|1792570000.1|1000|1004|COMPLETECALLER|3|30|1',
+        ]);
+        $call = $this->builder->build('1792570000.1', $rows, $events);
+
+        $this->assertSame([
+            '1002/in' => 'other_answered',
+            '1004/in' => 'answered',
+            '1009/in' => 'offline',
+        ], $this->outcomes($call));
+    }
+
+    public function test_queue_short_ringcanceled_with_no_answer_leg_stays_caller_hangup(): void
+    {
+        // Caller abandons: 1001 really rang (leg NO ANSWER) -> caller_hangup; 1010 FAILED -> offline.
+        $rows = $this->rows([
+            $this->queueLeg('1001', 5, 'NO ANSWER', 1),
+            $this->queueLeg('1010', 0, 'FAILED', 2),
+        ]);
+        $events = $this->events([
+            '1792570000|1792570000.1|1000|NONE|ENTERQUEUE||900000010|1',
+            '1792570005|1792570000.1|1000|1001|RINGCANCELED|35',
+            '1792570005|1792570000.1|1000|1010|RINGCANCELED|35',
+            '1792570005|1792570000.1|1000|NONE|ABANDON|1|1|5',
+        ]);
+        $call = $this->builder->build('1792570000.1', $rows, $events);
+
+        $this->assertSame([
+            '1001/in' => 'caller_hangup',
+            '1010/in' => 'offline',
+        ], $this->outcomes($call));
+    }
+
+    public function test_approx_short_leg_on_unanswered_call_is_caller_hangup(): void
+    {
+        // No queue_log: leg shorter than the 15 s ring timeout = caller hung up while ringing.
+        $rows = $this->rows([
+            $this->queueLeg('1001', 8, 'NO ANSWER', 1),
+            $this->queueLeg('1002', 15, 'NO ANSWER', 2),
+            $this->queueLeg('1005', 0, 'FAILED', 3),
+        ]);
+        $call = $this->builder->build('1792570000.1', $rows, []);
+
+        $this->assertTrue($call->approx);
+        $this->assertNull($call->answeredBy);
+        $this->assertSame([
+            '1001/in' => 'caller_hangup',
+            '1002/in' => 'missed',
+            '1005/in' => 'offline',
+        ], $this->outcomes($call));
+
+        $call = (new CallBuilder(new AgentResolver(['1001', '1002', '1005']), 5))->build('1792570000.1', $rows, []);
+        $this->assertSame('missed', $this->outcomes($call)['1001/in'], 'timeout is configurable');
     }
 
     private function build(string $name, bool $withQlog = true): CallRecord

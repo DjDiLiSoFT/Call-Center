@@ -18,12 +18,21 @@ use CallStats\Source\QueueLogEvent;
  */
 class AttemptCollector
 {
+    /**
+     * RINGNOANSWER ringtime at or below this is an offline phone, not a real ring
+     * (offline members log 0 or exactly 1000 ms on this PBX; real rings log >= 15000).
+     */
+    public const OFFLINE_MAX_RING_MS = 1000;
+
     /** @var AgentResolver */
     private $resolver;
+    /** @var int queue member ring timeout, seconds */
+    private $ringTimeoutSec;
 
-    public function __construct(AgentResolver $resolver)
+    public function __construct(AgentResolver $resolver, int $ringTimeoutSec = 15)
     {
         $this->resolver = $resolver;
+        $this->ringTimeoutSec = $ringTimeoutSec;
     }
 
     /** Extension of an operator phone channel (PJSIP/1001-…), null for trunks and others. */
@@ -39,10 +48,13 @@ class AttemptCollector
      * Queue attempts from queue_log (exact data).
      *
      * @param QueueLogEvent[] $events
+     * @param array[]         $queueRows CDR ext-queues rows of the same call: a RINGCANCELED of an
+     *                                   operator whose legs are all FAILED is an offline phone
      * @return array{agents: array<string,array>, connectedBy: ?string, talkSec: ?int, waitSec: ?int, transfers: array}
      */
-    public function fromQueueLog(array $events): array
+    public function fromQueueLog(array $events, array $queueRows = []): array
     {
+        $failedOnly = $this->failedOnlyOperators($queueRows);
         $agents = [];
         $connectedBy = null;
         $talkSec = null;
@@ -56,10 +68,16 @@ class AttemptCollector
                 case 'RINGCANCELED':
                     $ext = $this->agentOf($e->agent);
                     $ms = (int) ($d[0] ?? 0);
-                    $kind = $e->event === 'RINGCANCELED' ? 'canceled' : ($ms > 0 ? 'rang' : 'offline');
+                    if ($e->event === 'RINGCANCELED') {
+                        $kind = isset($failedOnly[$ext]) ? 'offline' : 'canceled';
+                    } else {
+                        $kind = $ms > self::OFFLINE_MAX_RING_MS ? 'rang' : 'offline';
+                    }
                     $this->touch($agents, $ext, $e->ts - (int) round($ms / 1000));
                     $this->addKind($agents[$ext], $kind);
-                    $agents[$ext]['ringMs'] += $ms;
+                    if ($kind !== 'offline') {
+                        $agents[$ext]['ringMs'] += $ms;
+                    }
                     break;
                 case 'CONNECT':
                     $ext = $this->agentOf($e->agent);
@@ -129,14 +147,33 @@ class AttemptCollector
                 $this->answer($agents[$ext], $t, $duration, (int) $r['billsec']);
             } elseif ($disp === 'FAILED' || $disp === 'CONGESTION') {
                 $this->addKind($agents[$ext], 'offline');
-            } elseif ($duration > 0) {
-                $this->addKind($agents[$ext], 'rang');
-                $agents[$ext]['ringMs'] += $duration * 1000;
             } else {
-                $this->addKind($agents[$ext], 'canceled');
+                // NO ANSWER / BUSY: a leg shorter than the member ring timeout was cut short
+                // (caller hung up or a colleague answered); a full-length leg really rang out.
+                $this->addKind($agents[$ext], $duration >= $this->ringTimeoutSec ? 'rang' : 'canceled');
+                $agents[$ext]['ringMs'] += $duration * 1000;
             }
         }
         return $agents;
+    }
+
+    /**
+     * Operators whose ext-queues legs in this call are all FAILED (phone offline).
+     *
+     * @return array<string,true>
+     */
+    private function failedOnlyOperators(array $queueRows): array
+    {
+        $state = [];
+        foreach ($queueRows as $r) {
+            if (!$this->resolver->isExtension($r['dstchannel'])) {
+                continue;
+            }
+            $ext = $this->resolver->resolve($r['dstchannel']);
+            $failed = $r['disposition'] === 'FAILED';
+            $state[$ext] = ($state[$ext] ?? true) && $failed;
+        }
+        return array_filter($state);
     }
 
     /**

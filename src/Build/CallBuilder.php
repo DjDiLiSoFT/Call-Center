@@ -18,10 +18,14 @@ class CallBuilder
     /** @var AttemptCollector */
     private $collector;
 
-    public function __construct(AgentResolver $r)
+    /**
+     * @param int $ringTimeoutSec queue member ring timeout; used only for queue calls without
+     *                            queue_log to tell a full ring-out from a cut-short leg
+     */
+    public function __construct(AgentResolver $r, int $ringTimeoutSec = 15)
     {
         $this->resolver = $r;
-        $this->collector = new AttemptCollector($r);
+        $this->collector = new AttemptCollector($r, $ringTimeoutSec);
     }
 
     /**
@@ -73,7 +77,7 @@ class CallBuilder
             ? $enter->data[1]
             : ($rows ? $rows[0]['src'] : '');
 
-        $q = $this->collector->fromQueueLog($events);
+        $q = $this->collector->fromQueueLog($events, $queueRows);
         $eq = $this->collector->fromQueueRows($queueRows);
         $legRows = array_filter($rows, function (array $r) {
             return $r['dcontext'] === 'ext-local' && preg_match('#^Local/[^@]+@from-queue#', $r['channel']);
