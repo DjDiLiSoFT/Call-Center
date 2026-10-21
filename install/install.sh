@@ -9,8 +9,9 @@ APP=/opt/callstats
 APP_USER=asterisk
 HIST_FROM=2026-08-01
 PHP=/usr/bin/php
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DO_REBUILD=0
+MARK="$APP/config/.installed"
 
 for a in "$@"; do
     case "$a" in
@@ -24,6 +25,8 @@ say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nОШИБКА: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "запустите от root"
+APP_REAL="$(cd "$APP" 2>/dev/null && pwd -P || echo "$APP")"
+[ "$SRC" != "$APP_REAL" ] || die "установщик запущен из $APP. Распакуйте архив в другую папку (например, cd /root; tar xzf callstats-*.tgz) и запустите оттуда: bash install/install.sh"
 [ -f "$SRC/bin/collect.php" ] && [ -f "$SRC/sql/schema.sql" ] || die "запускайте из распакованного архива: bash install/install.sh"
 [ -x "$PHP" ] || die "не найден $PHP"
 command -v mysql >/dev/null 2>&1 || die "не найден клиент mysql"
@@ -34,7 +37,7 @@ id "$APP_USER" >/dev/null 2>&1 || die "нет пользователя $APP_USER
 as_app() {
     local cmd
     cmd="$(printf '%q ' "$@")"
-    runuser -s /bin/bash "$APP_USER" -c "$cmd"
+    runuser -s /bin/bash "$APP_USER" -c "cd / && $cmd"
 }
 
 # MariaDB as root: local socket; password from MYSQL_ROOT_PASS or ~/.my.cnf if needed.
@@ -48,8 +51,11 @@ mysql_root() {
 mysql_root -e 'SELECT 1' >/dev/null 2>&1 \
     || die "не удалось подключиться к MariaDB как root. Если у root есть пароль: MYSQL_ROOT_PASS='пароль' bash install/install.sh"
 
+# FIRST_INSTALL stays 1 until the very last step writes $MARK, so a failed run is resumed on re-run.
 FIRST_INSTALL=0
-[ -f "$APP/config/config.php" ] || FIRST_INSTALL=1
+[ -f "$MARK" ] || FIRST_INSTALL=1
+HAVE_CONFIG=0
+[ -f "$APP/config/config.php" ] && HAVE_CONFIG=1
 
 # 1. Copy the code (config/config.php is kept).
 say "Копирование файлов в $APP"
@@ -64,10 +70,11 @@ chown -R root:root "$APP"
 chmod -R go-w "$APP"
 chmod +x "$APP"/install/*.sh 2>/dev/null || true
 # Readable by Apache/cron (asterisk) through root:asterisk group and world-read of code.
-chmod -R a+rX "$APP"
+# (config.php itself is never made world-readable)
+find "$APP" -path "$APP/config/config.php" -prune -o -exec chmod a+rX {} +
 
-# 2. Database, users and config (first install only).
-if [ "$FIRST_INSTALL" -eq 1 ]; then
+# 2. Database, users and config (only while config.php does not exist yet).
+if [ "$HAVE_CONFIG" -eq 0 ]; then
     say "Создание базы данных, пользователей и config.php"
     genpass() { head -c 512 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 24; }
     PASS_RW="$(genpass)"
@@ -88,7 +95,7 @@ FLUSH PRIVILEGES;"
     printf '%s\n' "$SQL" | mysql_root || die "не удалось создать базу и пользователей"
 
     CFG="$APP/config/config.php"
-    cp "$APP/config/config.sample.php" "$CFG"
+    install -m 640 -o root -g "$APP_USER" "$APP/config/config.sample.php" "$CFG"
     CS_RW="$PASS_RW" CS_RO="$PASS_RO" CS_CFG="$CFG" "$PHP" -r '
         $c = require getenv("CS_CFG");
         $c["db"]["callstats"]["pass"] = getenv("CS_RW");
@@ -96,11 +103,9 @@ FLUSH PRIVILEGES;"
         $c["db"]["fpbx"]["pass"]      = getenv("CS_RO");
         file_put_contents(getenv("CS_CFG"), "<?php\n\nreturn " . var_export($c, true) . ";\n");
     ' || die "не удалось записать config.php"
-    chown root:"$APP_USER" "$CFG"
-    chmod 640 "$CFG"
     unset PASS_RW PASS_RO SQL
 else
-    say "Обновление: config/config.php сохранён без изменений"
+    say "config/config.php уже есть, он сохранён без изменений"
     chown root:"$APP_USER" "$APP/config/config.php"
     chmod 640 "$APP/config/config.php"
 fi
@@ -124,11 +129,12 @@ chmod 644 "$CONF"
 if command -v apachectl >/dev/null 2>&1; then
     CT=apachectl
 elif command -v httpd >/dev/null 2>&1; then
-    CT="httpd"
+    CT="httpd -t"
 else
     rm -f "$CONF"; die "не найден apachectl"
 fi
-if ! $CT configtest; then
+if [ "$CT" = apachectl ]; then CT="apachectl configtest"; fi
+if ! $CT; then
     rm -f "$CONF"
     die "проверка конфигурации Apache не прошла. Файл $CONF удалён, Apache не тронут. Покажите вывод выше разработчику."
 fi
@@ -146,24 +152,64 @@ if [ -d /etc/logrotate.d ]; then
     chmod 644 /etc/logrotate.d/callstats
 fi
 
-# 6. First install: login + history. Update: only with --rebuild.
-TODAY="$(date +%Y-%m-%d)"
-if [ "$FIRST_INSTALL" -eq 1 ]; then
-    say "Создайте логин и пароль для входа на сайт"
-    until as_app "$PHP" "$APP/bin/set-password.php"; do
-        echo "Попробуйте ещё раз."
+# Smoke check: the page answers and PHP is executed (not shown as source) under the Alias.
+say "Проверка сайта"
+SMOKE_OK=0
+if command -v curl >/dev/null 2>&1; then
+    for base in http://127.0.0.1 https://127.0.0.1; do
+        code="$(curl -sk -o /dev/null -m 15 -w '%{http_code}' "$base/callstats/" || true)"
+        if [ "$code" = 200 ] || [ "$code" = 302 ]; then
+            body="$(curl -sk -m 15 "$base/callstats/?p=login" || true)"
+            if printf '%s' "$body" | grep -q '<?php'; then
+                break
+            fi
+            SMOKE_OK=1
+            break
+        fi
     done
+fi
+if [ "$SMOKE_OK" -eq 1 ]; then
+    echo "Сайт отвечает, PHP выполняется."
+else
+    echo "ВНИМАНИЕ: не удалось подтвердить, что сайт работает (установка продолжается)." >&2
+    echo "  Проверьте: открывается ли адрес ниже в браузере; работает ли PHP в Apache (php -v; rpm -qa | grep php);" >&2
+    echo "  нет ли ошибок в /var/log/httpd/error_log; не мешает ли другая настройка Apache (apachectl -S)." >&2
+fi
+
+# 6. Login (first install, or when no password is set yet) and history (first install / --rebuild).
+TODAY="$(date +%Y-%m-%d)"
+HAVE_AUTH="$(CS_CFG="$CFG" "$PHP" -r '
+    $c = require getenv("CS_CFG");
+    $d = $c["db"]["callstats"];
+    $pdo = new PDO($d["dsn"], $d["user"], $d["pass"]);
+    echo (int) $pdo->query("SELECT COUNT(*) FROM settings WHERE k = '"'"'auth_hash'"'"' AND v <> '"''"'")->fetchColumn();
+' 2>/dev/null || echo 0)"
+if [ "$FIRST_INSTALL" -eq 1 ] || [ "$HAVE_AUTH" != 1 ]; then
+    say "Создайте логин и пароль для входа на сайт"
+    pw_ok=0
+    for attempt in 1 2 3; do
+        if as_app "$PHP" "$APP/bin/set-password.php"; then pw_ok=1; break; fi
+        echo "Не получилось (попытка $attempt из 3)."
+    done
+    [ "$pw_ok" -eq 1 ] || die "пароль не задан. Задайте его позже командой: runuser -s /bin/bash asterisk -c \"cd / && $PHP $APP/bin/set-password.php\" , затем снова запустите bash install/install.sh"
 fi
 if [ "$FIRST_INSTALL" -eq 1 ] || [ "$DO_REBUILD" -eq 1 ]; then
     say "Загрузка истории с $HIST_FROM по $TODAY (может занять несколько минут)"
     as_app "$PHP" "$APP/bin/rebuild.php" --from="$HIST_FROM" --to="$TODAY" \
-        || die "загрузка истории не удалась. Исправьте ошибку и выполните: bash install/install.sh --rebuild"
+        || die "загрузка истории не удалась. Исправьте ошибку и снова запустите: bash install/install.sh"
 fi
 
-# 7. Done.
+# 7. Completion marker (last step), then the address.
+date '+%Y-%m-%d %H:%M:%S' > "$MARK"
+chown root:"$APP_USER" "$MARK"
+chmod 640 "$MARK"
+
 HOST="$(hostname -f 2>/dev/null || hostname)"
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 say "Готово"
-echo "Откройте в браузере: https://$HOST/callstats/"
-[ -n "$IP" ] && echo "или:                 https://$IP/callstats/"
+echo "Откройте в браузере:"
+echo "  https://$HOST/callstats/   или   http://$HOST/callstats/"
+if [ -n "$IP" ]; then
+    echo "  https://$IP/callstats/   или   http://$IP/callstats/"
+fi
 echo "Сборщик данных запускается каждую минуту (журнал: /var/log/callstats.log)."
