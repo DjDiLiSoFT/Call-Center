@@ -32,10 +32,10 @@ class OperatorStatsReport
         $extensions = array_values(array_unique(array_map('strval', $extensions)));
 
         $rows = $this->callStats($p, $queue, $extensions);
-        list($sessions, $pauses) = $this->timeline($p, $queue, $extensions, $now);
+        list($sessions, $pauses, $pauseTotals) = $this->timeline($p, $queue, $extensions, $now);
         $hasTimeline = $this->anyTimeline($p);
 
-        foreach (array_keys($sessions + $pauses) as $ext) {
+        foreach (array_keys($sessions + $pauseTotals) as $ext) {
             if (!isset($rows[$ext])) {
                 $rows[$ext] = $this->emptyRow((string) $ext);
             }
@@ -49,7 +49,7 @@ class OperatorStatsReport
             if ($hasTimeline) {
                 $has = isset($sessions[$ext]);
                 $r['session_sec'] = $has ? $sessions[$ext] : null;
-                $r['pause_sec'] = ($has || isset($pauses[$ext])) ? array_sum($pauses[$ext] ?? []) : null;
+                $r['pause_sec'] = ($has || isset($pauseTotals[$ext])) ? ($pauseTotals[$ext] ?? 0) : null;
                 $r['pauses_by_reason'] = $pauses[$ext] ?? [];
             } else {
                 $r['session_sec'] = null;
@@ -169,7 +169,7 @@ class OperatorStatsReport
     /**
      * Union of intervals per operator.
      *
-     * @return array{0: array<string,int>, 1: array<string,array<string,int>>} sessions[ext] => sec, pauses[ext][reason] => sec
+     * @return array{0: array<string,int>, 1: array<string,array<string,int>>, 2: array<string,int>} sessions[ext] => sec, pauses[ext][reason] => sec, pause totals[ext] => sec (union over all reasons)
      */
     private function timeline(Period $p, ?string $queue, array $extensions, int $now): array
     {
@@ -206,9 +206,11 @@ class OperatorStatsReport
             }
         }
         $pauseIv = [];
+        $pauseAll = [];
         foreach ($fetch('agent_pauses', 'extension, start_at, end_at, reason') as $r) {
             if (($iv = $clip($r)) !== null) {
                 $pauseIv[(string) $r['extension']][(string) $r['reason']][] = $iv;
+                $pauseAll[(string) $r['extension']][] = $iv;
             }
         }
 
@@ -222,7 +224,11 @@ class OperatorStatsReport
                 $pauses[$ext][$reason] = self::unionLength($ivs);
             }
         }
-        return [$sessions, $pauses];
+        $pauseTotals = [];
+        foreach ($pauseAll as $ext => $ivs) {
+            $pauseTotals[$ext] = self::unionLength($ivs);
+        }
+        return [$sessions, $pauses, $pauseTotals];
     }
 
     /** @param array<int,array{0:int,1:int}> $ivs */
@@ -259,11 +265,12 @@ class OperatorStatsReport
             $sql .= ' AND c.queue = ?';
             $args[] = $queue;
         }
+        $sql .= ' AND EXISTS (SELECT 1 FROM call_agents ca WHERE ca.call_id = c.id';
         if ($extensions) {
-            $sql .= ' AND EXISTS (SELECT 1 FROM call_agents ca WHERE ca.call_id = c.id AND ca.extension IN ('
-                . implode(',', array_fill(0, count($extensions), '?')) . '))';
+            $sql .= ' AND ca.extension IN (' . implode(',', array_fill(0, count($extensions), '?')) . ')';
             $args = array_merge($args, $extensions);
         }
+        $sql .= ')';
         $st = $this->db->prepare($sql . ' LIMIT 1');
         $st->execute($args);
         return (bool) $st->fetchColumn();

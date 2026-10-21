@@ -172,12 +172,17 @@ class OperatorStatsReportTest extends DbTestCase
         $p->execute(['1004', '1001', '2026-10-18 10:15:00', '2026-10-18 10:45:00', 'Обед']);
         $p->execute(['1004', '1001', '2026-10-18 11:00:00', '2026-10-18 11:10:00', 'Перекур']);
 
+        // different reason on another queue, overlapping the lunch pauses: 10:40..11:05 (union with others)
+        $p->execute(['1004', '1002', '2026-10-18 10:40:00', '2026-10-18 11:05:00', 'Тренинг']);
+
         $res = $this->report()->fetch($this->period(), null, [], strtotime(self::NOW));
         $this->assertTrue($res['hasTimeline']);
         $by = $this->rowsBy($res);
         $this->assertSame(3 * 3600, $by['1004']['session_sec']);       // 09:00..12:00
-        $this->assertSame(45 * 60 + 10 * 60, $by['1004']['pause_sec']); // 10:00..10:45 + 11:00..11:10
-        $this->assertSame(['Обед' => 45 * 60, 'Перекур' => 600], $by['1004']['pauses_by_reason']);
+        $this->assertSame(70 * 60, $by['1004']['pause_sec']); // union 10:00..11:10 across reasons, not the per-reason sum
+        $this->assertSame(['Обед' => 45 * 60, 'Перекур' => 600, 'Тренинг' => 25 * 60], $by['1004']['pauses_by_reason']);
+        $this->assertSame(70 * 60, $res['total']['pause_sec']);
+        $this->assertSame(5 * 3600, $res['total']['session_sec']);
         $this->assertSame(3600, $by['1002']['session_sec']);
         $this->assertSame(3600, $by['1005']['session_sec']);
         $this->assertNull($by['1001']['session_sec']);

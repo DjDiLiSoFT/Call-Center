@@ -96,7 +96,7 @@ $reasonTitle = function (array $r) {
       <td data-sort="<?= View::e(mb_strtolower($r['name'])) ?>"><a href="<?= View::e($journal($r['extension'])) ?>"><?= View::e($r['name']) ?></a><?= $r['name'] !== (string) $r['extension'] ? ' <span class="muted">' . View::e($r['extension']) . '</span>' : '' ?></td>
       <td class="num" data-sort="<?= $r['answered'] ?>"><?= $r['answered'] ?></td>
       <td class="num" data-sort="<?= $r['missed'] ?>"><?= $r['missed'] ?></td>
-      <td class="num" data-sort="<?= $r['answer_pct'] === null ? -1 : $r['answer_pct'] ?>"><?= View::e($pct($r['answer_pct'])) ?></td>
+      <td class="num" data-sort="<?= $r['answer_pct'] === null ? -1 : number_format($r['answer_pct'], 1, '.', '') ?>"><?= View::e($pct($r['answer_pct'])) ?></td>
       <td class="num" data-sort="<?= $r['offline'] ?>"><?= $r['offline'] ?></td>
       <td class="num" data-sort="<?= $r['out_total'] ?>"><?= $r['out_connected'] ?> / <?= $r['out_total'] ?></td>
       <td class="num" data-sort="<?= $r['talk_sec'] ?>"><?= View::e($dur($r['talk_sec'])) ?></td>
