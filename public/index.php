@@ -1,6 +1,7 @@
 <?php
 
 use CallStats\Db;
+use CallStats\Report\OperatorJournal;
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
 use CallStats\Store\OperatorRepository;
@@ -44,6 +45,32 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
         'operators' => $operators,
         'queue' => $queue,
         'selected' => $selected,
+    ]);
+});
+
+$app->route('journal', function (array $get, array $post) use ($app, $db, $ops): string {
+    $period = Period::fromRequest($get, time());
+    $operators = [];
+    foreach ($ops->all() as $o) {
+        $operators[(string) $o['extension']] = $ops->displayName((string) $o['extension']);
+    }
+    $ext = isset($get['ext']) && is_string($get['ext']) && isset($operators[$get['ext']]) ? $get['ext'] : '';
+    $summary = null;
+    $hasTimeline = false;
+    $items = [];
+    if ($ext !== '') {
+        $report = (new OperatorStatsReport($db, $ops))->fetch($period, null, [$ext]);
+        $summary = $report['rows'][0] ?? null;
+        $hasTimeline = $report['hasTimeline'];
+        $items = OperatorJournal::collapseOffline((new OperatorJournal($db))->fetch($ext, $period));
+    }
+    return $app->view()->render('journal', [
+        'period' => $period,
+        'operators' => $operators,
+        'ext' => $ext,
+        'summary' => $summary,
+        'hasTimeline' => $hasTimeline,
+        'items' => $items,
     ]);
 });
 
