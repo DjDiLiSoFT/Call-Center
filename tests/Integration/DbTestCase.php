@@ -78,6 +78,15 @@ abstract class DbTestCase extends TestCase
         self::applySqlFile($this->fpbx, __DIR__ . '/../fixtures/asterisk.sql');
     }
 
+    /** PHPUnit keeps finished test objects: drop their connections, or the server runs out of them. */
+    protected function tearDown(): void
+    {
+        $this->db = null;
+        $this->src = null;
+        $this->fpbx = null;
+        parent::tearDown();
+    }
+
     private function connectTo(string $dbname): PDO
     {
         return Db::connect(self::testDsn() . ';dbname=' . $dbname, self::testUser(), self::testPass());

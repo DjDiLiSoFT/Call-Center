@@ -211,4 +211,104 @@ class OperatorJournalTest extends DbTestCase
         $this->assertSame('2026-10-18 09:10:00', $out[0]['at']);
         $this->assertSame('2026-10-18 11:40:00', $out[0]['until']);
     }
+
+    public function test_normalize_number_keeps_last_nine_digits(): void
+    {
+        $this->assertSame('901112233', OperatorJournal::normalizeNumber('+998 (90) 111-22-33'));
+        $this->assertSame('901112233', OperatorJournal::normalizeNumber('901112233'));
+        $this->assertSame('1002', OperatorJournal::normalizeNumber('1002'));
+        $this->assertSame('', OperatorJournal::normalizeNumber('anonymous'));
+    }
+
+    public function test_with_callbacks_finds_callback_got_through_and_none(): void
+    {
+        // missed #1 (09:00, +998901112233): operator 1002 calls back at 09:05, connected
+        $this->call('m1', 'queue', '1000', '2026-10-18 09:00:00', [
+            new AgentOutcome('1004', 'in', 'missed', 15, 0, '2026-10-18 09:00:00', null),
+        ]);
+        $this->call('cb1', 'outbound', null, '2026-10-18 09:05:00', [
+            new AgentOutcome('1002', 'out', 'answered', 5, 40, '2026-10-18 09:05:00', '2026-10-18 09:05:05'),
+        ], ['clientNumber' => '901112233']);
+        // missed #2 (10:00, other number): nobody calls back, but the client gets through at 10:12, answered by 1006
+        $this->call('m2', 'direct', null, '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'in', 'caller_hangup', 8, 0, '2026-10-18 10:00:00', null),
+        ], ['clientNumber' => '+998935554433']);
+        $this->call('in2', 'queue', '1000', '2026-10-18 10:12:00', [
+            new AgentOutcome('1006', 'in', 'answered', 3, 60, '2026-10-18 10:12:00', '2026-10-18 10:12:03'),
+        ], ['clientNumber' => '998935554433', 'answeredBy' => '1006']);
+        // missed #3 (11:00): a callback to a different number and a callback after 24 h do not count
+        $this->call('m3', 'queue', '1000', '2026-10-18 11:00:00', [
+            new AgentOutcome('1004', 'in', 'missed', 15, 0, '2026-10-18 11:00:00', null),
+        ], ['clientNumber' => '+998977770000']);
+        $this->call('x1', 'outbound', null, '2026-10-18 11:10:00', [
+            new AgentOutcome('1002', 'out', 'answered', 5, 40, '2026-10-18 11:10:00', '2026-10-18 11:10:05'),
+        ], ['clientNumber' => '+998977770001']);
+        $this->call('x2', 'outbound', null, '2026-10-19 11:00:01', [
+            new AgentOutcome('1002', 'out', 'answered', 5, 40, '2026-10-19 11:00:01', '2026-10-19 11:00:06'),
+        ], ['clientNumber' => '+998977770000']);
+        // callback attempt that did not connect
+        $this->call('m4', 'queue', '1000', '2026-10-18 12:00:00', [
+            new AgentOutcome('1004', 'in', 'missed', 15, 0, '2026-10-18 12:00:00', null),
+        ], ['clientNumber' => '+998912223344']);
+        $this->call('cb4', 'outbound', null, '2026-10-18 12:00:40', [
+            new AgentOutcome('1005', 'out', 'not_connected', 20, 0, '2026-10-18 12:00:40', null),
+        ], ['clientNumber' => '+998912223344']);
+
+        $items = $this->journal()->withCallbacks($this->journal()->fetch('1004', $this->period()));
+        $this->assertSame(['in_missed', 'in_caller_hangup', 'in_missed', 'in_missed'], $this->types($items));
+        $this->assertSame(['kind' => 'callback', 'at' => '2026-10-18 09:05:00', 'after_sec' => 300, 'ext' => '1002', 'connected' => true],
+            $items[0]['callback']);
+        $this->assertSame(['kind' => 'got_through', 'at' => '2026-10-18 10:12:00', 'after_sec' => 720, 'ext' => '1006', 'connected' => true],
+            $items[1]['callback']);
+        $this->assertSame(['kind' => 'none', 'at' => null, 'after_sec' => null, 'ext' => null, 'connected' => null],
+            $items[2]['callback']);
+        $this->assertSame('callback', $items[3]['callback']['kind']);
+        $this->assertSame(40, $items[3]['callback']['after_sec']);
+        $this->assertFalse($items[3]['callback']['connected']);
+        $this->assertSame([], $this->journal()->withCallbacks([]));
+    }
+
+    public function test_client_history_matches_last_nine_digits_newest_first(): void
+    {
+        $this->call('h1', 'queue', '1000', '2026-10-17 09:00:00', [
+            new AgentOutcome('1004', 'in', 'answered', 3, 60, '2026-10-17 09:00:00', '2026-10-17 09:00:03'),
+        ], ['clientNumber' => '+998901112233', 'answeredBy' => '1004', 'talkSec' => 60, 'recordingFile' => 'a.wav']);
+        $this->call('h2', 'outbound', null, '2026-10-18 10:00:00', [
+            new AgentOutcome('1002', 'out', 'not_connected', 20, 0, '2026-10-18 10:00:00', null),
+        ], ['clientNumber' => '901112233']);
+        $this->call('h3', 'direct', null, '2026-10-18 11:00:00', [
+            new AgentOutcome('1004', 'in', 'missed', 15, 0, '2026-10-18 11:00:00', null),
+        ], ['clientNumber' => '998901112233']);
+        $this->call('other', 'direct', null, '2026-10-18 12:00:00', [], ['clientNumber' => '+998901112234']);
+
+        $h = $this->journal()->clientHistory('+998 90 111 22 33');
+        $this->assertSame([3, 2, 1], array_column($h, 'call_id'));
+        $this->assertSame('missed', $h[0]['result']);
+        $this->assertSame('in', $h[0]['dir']);
+        $this->assertSame('out_failed', $h[1]['result']);
+        $this->assertSame('1002', $h[1]['ext']);
+        $this->assertSame('out', $h[1]['dir']);
+        $this->assertSame('answered', $h[2]['result']);
+        $this->assertSame('1004', $h[2]['ext']);
+        $this->assertSame(60, $h[2]['talk_sec']);
+        $this->assertTrue($h[2]['has_recording']);
+        $this->assertCount(2, $this->journal()->clientHistory('901112233', 2));
+        $this->assertSame([], $this->journal()->clientHistory('%'));
+    }
+
+    public function test_fetch_all_merges_operators_with_ext(): void
+    {
+        $this->call('a1', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'in', 'answered', 1, 5, '2026-10-18 10:00:00', '2026-10-18 10:00:01'),
+        ]);
+        $this->call('a2', 'direct', null, '2026-10-18 09:00:00', [
+            new AgentOutcome('1005', 'in', 'missed', 1, 0, '2026-10-18 09:00:00', null),
+        ]);
+        $this->call('a3', 'outbound', null, '2026-10-18 11:00:00', [
+            new AgentOutcome('1005', 'out', 'answered', 1, 5, '2026-10-18 11:00:00', '2026-10-18 11:00:01'),
+        ]);
+        $items = $this->journal()->fetchAll($this->period(), ['1004', '1005']);
+        $this->assertSame(['in_missed', 'in_answered', 'out'], $this->types($items));
+        $this->assertSame(['1005', '1004', '1005'], array_column($items, 'ext'));
+    }
 }

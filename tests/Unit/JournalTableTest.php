@@ -76,4 +76,43 @@ class JournalTableTest extends TestCase
         $this->assertSame('1 ч, 00 мин, 05 сек', Format::humanDuration(3605));
         $this->assertSame('ср, 19 авг. 2026 г., 10:00', Format::ruDateTime('2026-08-19 10:00:27'));
     }
+
+    public function test_categories_counts_type_filter_noise_and_days(): void
+    {
+        $rows = JournalTable::rows([
+            $this->item('2026-10-20 09:00:00', 'in_answered', ['client' => '1', 'talk_sec' => 10]),
+            $this->item('2026-10-20 09:05:00', 'in_missed', ['client' => '2', 'ring_sec' => 15]),
+            $this->item('2026-10-20 09:06:00', 'in_other', ['client' => '3']),
+            $this->item('2026-10-20 09:07:00', 'in_caller_hangup', ['client' => '4']),
+            $this->item('2026-10-21 10:00:00', 'out', ['client' => '5', 'reason' => 'answered', 'talk_sec' => 5]),
+            $this->item('2026-10-21 10:01:00', 'offline_group', ['count' => 3, 'until' => '2026-10-21 10:30:00']),
+            $this->item('2026-10-21 10:31:00', 'pause', ['until' => '2026-10-21 10:40:00', 'reason' => 'Обед']),
+            $this->item('2026-10-21 10:45:00', 'internal', ['client' => '1002', 'reason' => 'out', 'talk_sec' => 3]),
+        ]);
+        $this->assertSame(['answered', 'missed', 'other', 'other', 'out', 'offline', 'event', 'internal'], array_column($rows, 'cat'));
+        $this->assertSame(['answered' => 1, 'missed' => 1, 'out' => 1, 'internal' => 1, 'other' => 2, 'offline' => 1, 'event' => 1],
+            JournalTable::counts($rows));
+
+        $default = JournalTable::filterType($rows, '', false);
+        $this->assertSame(['answered', 'missed', 'out', 'event', 'internal'], array_column($default, 'cat'), 'noise hidden by default');
+        $this->assertCount(8, JournalTable::filterType($rows, '', true));
+        $this->assertSame(['other', 'other'], array_column(JournalTable::filterType($rows, 'other', false), 'cat'),
+            'an explicit noise chip shows it even with noise off');
+        $this->assertSame(['missed'], array_column(JournalTable::filterType($rows, 'missed', false), 'cat'));
+
+        $this->assertSame([
+            '2026-10-20' => ['answered' => 1, 'missed' => 1, 'out' => 0],
+            '2026-10-21' => ['answered' => 0, 'missed' => 0, 'out' => 1],
+        ], JournalTable::days($rows));
+    }
+
+    public function test_rows_carry_operator_and_callback(): void
+    {
+        $rows = JournalTable::rows([
+            $this->item('2026-10-20 09:05:00', 'in_missed', ['client' => '2', 'ext' => '1001',
+                'callback' => ['kind' => 'callback', 'after_sec' => 300, 'ext' => '1002', 'connected' => true]]),
+        ]);
+        $this->assertSame('1001', $rows[0]['ext']);
+        $this->assertSame('callback', $rows[0]['callback']['kind']);
+    }
 }

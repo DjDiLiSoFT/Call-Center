@@ -144,6 +144,60 @@ class Charts
         return $svg . '</svg>';
     }
 
+    private const STRIP_COLORS = [
+        'talk' => 'var(--accent)', 'pause' => '#9333ea', 'missed' => 'var(--danger)', 'offline' => '#9aa5b1',
+    ];
+
+    /**
+     * One operator's day as a horizontal strip (DayTimeline::build() result): hour ticks, coloured
+     * segments with data-tip, and a legend below.
+     */
+    public static function dayStrip(array $timeline): string
+    {
+        $fromH = (int) $timeline['from_h'];
+        $toH = max($fromH + 1, (int) $timeline['to_h']);
+        // The strip stretches to the container width (preserveAspectRatio none), so hour labels are HTML, not SVG text.
+        $w = 1000;
+        $top = 0;
+        $barH = 24;
+        $span = ($toH - $fromH) * 60;
+        $x = function (float $minute) use ($fromH, $span, $w): float {
+            return round(max(0, min($w, ($minute - $fromH * 60) / $span * $w)), 2);
+        };
+        $svg = '<svg class="strip" viewBox="0 0 ' . $w . ' ' . $barH . '" preserveAspectRatio="none" role="img" aria-label="Шкала дня">'
+            . '<rect x="0" y="0" width="' . $w . '" height="' . $barH . '" class="strip-bg"/>';
+        $hours = '<div class="strip-hours" aria-hidden="true">';
+        for ($hr = $fromH; $hr <= $toH; $hr++) {
+            $hx = $x($hr * 60);
+            $svg .= '<line x1="' . $hx . '" y1="0" x2="' . $hx . '" y2="' . $barH . '" class="grid" vector-effect="non-scaling-stroke"/>';
+            $hours .= '<span class="tick" style="left:' . round($hx / $w * 100, 3) . '%">' . sprintf('%02d', $hr) . '</span>';
+        }
+        $hours .= '</div>';
+        // pauses and offline runs underneath, then talks, then missed marks on top
+        $layer = ['pause' => 0, 'offline' => 0, 'talk' => 1, 'missed' => 2];
+        $segs = $timeline['segments'];
+        usort($segs, function (array $a, array $b) use ($layer): int {
+            return [$layer[$a['kind']] ?? 0, $a['from']] <=> [$layer[$b['kind']] ?? 0, $b['from']];
+        });
+        foreach ($segs as $s) {
+            if (!isset(self::STRIP_COLORS[$s['kind']])) {
+                continue;
+            }
+            $x1 = $x((float) $s['from']);
+            $x2 = $x((float) $s['to']);
+            $sw = max(2, $x2 - $x1); // keep short calls visible
+            $svg .= '<rect x="' . $x1 . '" y="' . $top . '" width="' . round($sw, 2) . '" height="' . $barH
+                . '" fill="' . self::STRIP_COLORS[$s['kind']] . '" class="seg seg-' . View::e($s['kind'])
+                . '" data-tip="' . View::e($s['tip']) . '"/>';
+        }
+        $svg .= '</svg>';
+        $legend = '<ul class="strip-legend">';
+        foreach (['talk' => 'разговор', 'pause' => 'пауза', 'missed' => 'пропущен', 'offline' => 'не в сети'] as $k => $label) {
+            $legend .= '<li><span class="sw" style="background:' . self::STRIP_COLORS[$k] . '"></span>' . $label . '</li>';
+        }
+        return '<div class="day-strip">' . $svg . $hours . $legend . '</ul></div>';
+    }
+
     /** Bar anchored on the baseline with 4px rounded top corners. */
     private static function roundTopBar(float $x, float $base, float $w, float $h): string
     {

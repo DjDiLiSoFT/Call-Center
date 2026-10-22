@@ -10,11 +10,61 @@ use CallStats\Web\Charts;
  *
  * Row: at, dir (in|out|internal|event), failed (not connected), muted (grey), number, text
  * (event description), note (muted detail), duration (seconds or null), call_id, rec_status
- * ('' when no recording), approx, sources, items (offline group members).
+ * ('' when no recording), approx, sources, items (offline group members), cat (chip category, see CATS),
+ * ext (operator, all-operators mode), callback (OperatorJournal::withCallbacks() result or null).
  */
 class JournalTable
 {
     public const PER_PAGE = [25, 50, 100];
+
+    /** Category chips in display order. */
+    public const CATS = ['answered', 'missed', 'out', 'internal', 'other', 'offline', 'event'];
+
+    /** Categories hidden by default ("noise"): the call was taken by a colleague / the phone was offline. */
+    public const NOISE = ['other', 'offline'];
+
+    private const CAT_OF = [
+        'in_answered' => 'answered', 'in_missed' => 'missed', 'in_other' => 'other', 'in_caller_hangup' => 'other',
+        'in_offline' => 'offline', 'offline_group' => 'offline', 'out' => 'out', 'internal' => 'internal',
+    ];
+
+    /** @return array<string,int> category => rows, in CATS order, absent categories omitted */
+    public static function counts(array $rows): array
+    {
+        $n = array_fill_keys(self::CATS, 0);
+        foreach ($rows as $r) {
+            $n[$r['cat']]++;
+        }
+        return array_filter($n);
+    }
+
+    /** $type '' = everything except noise (unless $noise); a category = only it. */
+    public static function filterType(array $rows, string $type, bool $noise): array
+    {
+        return array_values(array_filter($rows, function (array $r) use ($type, $noise): bool {
+            if ($type !== '') {
+                return $r['cat'] === $type;
+            }
+            return $noise || !in_array($r['cat'], self::NOISE, true);
+        }));
+    }
+
+    /** @return array<string, array{answered:int, missed:int, out:int}> 'Y-m-d' => counts, by date */
+    public static function days(array $rows): array
+    {
+        $d = [];
+        foreach ($rows as $r) {
+            $day = substr($r['at'], 0, 10);
+            if (!isset($d[$day])) {
+                $d[$day] = ['answered' => 0, 'missed' => 0, 'out' => 0];
+            }
+            if (isset($d[$day][$r['cat']])) {
+                $d[$day][$r['cat']]++;
+            }
+        }
+        ksort($d);
+        return $d;
+    }
 
     public static function rows(array $items): array
     {
@@ -35,6 +85,7 @@ class JournalTable
             'call_id' => $it['call_id'] ?? null,
             'rec_status' => !empty($it['has_recording']) ? (string) ($it['rec_status'] ?? 'missing') : '',
             'approx' => !empty($it['approx']), 'sources' => $it['sources'] ?? null, 'items' => $it['items'] ?? [],
+            'cat' => self::CAT_OF[$t] ?? 'event', 'ext' => $it['ext'] ?? null, 'callback' => $it['callback'] ?? null,
         ];
         $ring = ($it['ring_sec'] ?? null) === null ? null : (int) $it['ring_sec'];
         $talk = ($it['talk_sec'] ?? null) === null ? null : (int) $it['talk_sec'];

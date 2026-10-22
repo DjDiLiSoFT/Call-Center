@@ -1,4 +1,5 @@
 <?php
+use CallStats\Web\Delta;
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
@@ -14,27 +15,7 @@ $d = function ($sec) {
 };
 // ▲/▼ vs the previous period: $good = +1 (more is better), -1 (less is better), 0 (neutral).
 $delta = function (string $k, int $good) use ($r, $prev): string {
-    if ($prev === null || $r[$k] === null || $prev[$k] === null) {
-        return '';
-    }
-    $cur = (float) $r[$k];
-    $was = (float) $prev[$k];
-    if ($k === 'answer_pct') {
-        $diff = round($cur - $was, 1);
-        $txt = str_replace('.', ',', (string) abs($diff)) . ' п.п.';
-    } else {
-        if ($was == 0.0) {
-            return '';
-        }
-        $diff = round(($cur - $was) * 100 / $was);
-        $txt = abs($diff) . '%';
-    }
-    if ($diff == 0) {
-        return '';
-    }
-    $cls = $good === 0 ? '' : (($diff > 0) === ($good > 0) ? ' good' : ' bad');
-    $title = 'В прошлом периоде: ' . ($k === 'answer_pct' ? Format::pct($was) : (in_array($k, ['talk_sec', 'avg_ring_sec'], true) ? Format::duration((int) $was) : (string) (int) $was));
-    return '<span class="dlt' . $cls . '" title="' . View::e($title) . '">' . ($diff > 0 ? '▲' : '▼') . $txt . '</span>';
+    return $prev === null ? '' : Delta::html($k, $r[$k], $prev[$k] ?? null, $good);
 };
 $level = $r['pct_level'] ?? null;
 ?>
