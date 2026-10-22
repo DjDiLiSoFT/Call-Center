@@ -118,6 +118,25 @@ class QueueSummaryReportTest extends DbTestCase
         $this->assertCount(1, $s['lost_calls']);
     }
 
+    public function test_called_back_only_judges_lost_calls_older_than_a_day(): void
+    {
+        $this->seed();
+        $r = $this->report();
+        // l1 (10:30) is 24 h old at 10:45 next day, l2 (11:00, called back) is not yet
+        $s = $r->fetch($this->period(), null, strtotime('2026-10-19 10:45:00'));
+        $this->assertSame(1, $s['called_back_base']);
+        $this->assertSame(0, $s['called_back']);
+        $this->assertSame(0.0, $s['called_back_pct']);
+        $this->assertCount(2, $s['lost_calls'], 'the list still has every lost call');
+        $s = $r->fetch($this->period(), null, strtotime('2026-10-19 11:00:00'));
+        $this->assertSame(2, $s['called_back_base']);
+        $this->assertSame(1, $s['called_back']);
+        $this->assertSame(50.0, $s['called_back_pct']);
+        $s = $r->fetch($this->period(), null, strtotime('2026-10-18 23:00:00'));
+        $this->assertSame(0, $s['called_back_base']);
+        $this->assertNull($s['called_back_pct']);
+    }
+
     public function test_empty_period(): void
     {
         $s = $this->report()->fetch($this->period());
@@ -160,8 +179,8 @@ class QueueSummaryReportTest extends DbTestCase
     {
         $this->seed();
         $b = $this->report()->waitBuckets($this->period());
-        $this->assertSame(['0–5' => 1, '5–10' => 0, '10–15' => 1, '15–30' => 1, '30+' => 0], $b['answered']);
-        $this->assertSame(['0–5' => 1, '5–10' => 1, '10–15' => 0, '15–30' => 0, '30+' => 1], $b['lost']);
+        $this->assertSame(['0–5' => 1, '6–10' => 1, '11–15' => 0, '16–30' => 1, '31+' => 0], $b['answered']);
+        $this->assertSame(['0–5' => 1, '6–10' => 1, '11–15' => 0, '16–30' => 0, '31+' => 1], $b['lost']);
     }
 
     public function test_repeat_callers_merge_number_forms(): void

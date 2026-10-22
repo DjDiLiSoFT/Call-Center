@@ -4,7 +4,7 @@ namespace CallStats\Report;
 
 /**
  * Reading aids for the operator stats table: operators with no calls at all are split off
- * (they only add noise), the rest get a rank, an answer-rate level and a "missed above average"
+ * (they only add noise), the rest get a rank, an answer-rate level and a "lost clients above average" (missed_lost)
  * flag, plus their values in the previous period for ▲/▼ comparison.
  */
 class StatsInsights
@@ -36,7 +36,7 @@ class StatsInsights
         $withIn = array_filter($active, function (array $r): bool {
             return (int) $r['answered'] + (int) $r['missed'] > 0;
         });
-        $avgMissed = $withIn ? array_sum(array_column($withIn, 'missed')) / count($withIn) : 0.0;
+        $avgMissed = $withIn ? array_sum(array_column($withIn, 'missed_lost')) / count($withIn) : 0.0;
 
         usort($active, function (array $a, array $b): int {
             return [-(int) $a['answered'], (int) $a['missed'], (string) $a['extension']]
@@ -45,7 +45,7 @@ class StatsInsights
         foreach ($active as $i => &$r) {
             $r['rank'] = $i + 1;
             $r['pct_level'] = self::pctLevel($r['answer_pct']);
-            $r['missed_high'] = (int) $r['missed'] >= 3 && (int) $r['missed'] > 1.5 * $avgMissed;
+            $r['missed_high'] = (int) $r['missed_lost'] >= 3 && (int) $r['missed_lost'] > 1.5 * $avgMissed;
             $p = $prev[(string) $r['extension']] ?? null;
             $r['prev'] = $p === null ? null : array_intersect_key($p, array_flip(self::COMPARED));
         }

@@ -20,7 +20,7 @@ $reasonTitle = function (array $r) {
     }
     return implode("\n", $parts);
 };
-$cols = 13;
+$cols = 12; // rank + operator + 10 figures (_stats_head.php)
 ?>
 <?php if ($report['hasApprox']): ?>
 <p class="notice">часть данных за выбранный период приблизительная</p>

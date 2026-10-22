@@ -390,3 +390,4 @@ tfoot .dlt { display: none; }
 }
 .op-tiles { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
 .panel-wide { grid-column: 1 / -1; }
+td.missed-high { background: var(--danger-bg); }

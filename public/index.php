@@ -15,6 +15,7 @@ use CallStats\Web\RecordingStreamer;
 use CallStats\Store\OperatorRepository;
 use CallStats\Web\App;
 use CallStats\Web\Csv;
+use CallStats\Web\StatsCsv;
 use CallStats\Web\Format;
 
 $config = require __DIR__ . '/../src/bootstrap.php';
@@ -64,6 +65,9 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
         $clientsPeriod = $half;
     } else {
         $period = Period::fromRequest($get, $now);
+        if ($period->days() > 366) {
+            return $app->view()->render('stats', ['period' => $period, 'default' => false, 'overYear' => true]);
+        }
         $summaryTitle = Period::PRESETS[$period->preset] ?? 'Период';
         $sectionPeriods = [$summaryTitle => $period];
         $clientsPeriod = $period;
@@ -92,8 +96,8 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
         }
         $lost = $queue->lostCalls($cover);
     }
-    $s = $callbacks ? $queue->fetch($period, $lost) : $queue->summary($period);
-    $prev = $callbacks && $period->days() <= 31 ? $queue->fetch($summaryPrev, $lost) : $queue->summary($summaryPrev);
+    $s = $callbacks ? $queue->fetch($period, $lost, $now) : $queue->summary($period);
+    $prev = $callbacks && $period->days() <= 31 ? $queue->fetch($summaryPrev, $lost, $now) : $queue->summary($summaryPrev);
 
     $sections = [];
     foreach ($sectionPeriods as $title => $p) {
@@ -110,7 +114,7 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
     }
     $notCalled = [];
     if ($tooLong === null) {
-        foreach ($queue->fetch($clientsPeriod, $lost)['lost_calls'] as $it) {
+        foreach ($queue->fetch($clientsPeriod, $lost, $now)['lost_calls'] as $it) {
             if (($it['callback']['kind'] ?? 'none') === 'none') {
                 $notCalled[] = $it;
             }
@@ -187,47 +191,13 @@ $app->route('stats_csv', function (array $get, array $post) use ($db, $ops): str
         return $deny(400, 'Период слишком длинный: выгрузка — максимум за 92 дня');
     }
     $names = $ops->displayNames();
-    $who = function (string $ext) use ($names): string {
-        $n = $names[$ext] ?? $ext;
-        return $n !== $ext ? $n . ' (' . $ext . ')' : $ext;
-    };
-    $dec = function ($v): string {
-        return $v === null ? '' : str_replace('.', ',', (string) $v);
-    };
     $queue = new QueueSummaryReport($db);
-    $textCols = [];
-    $rows = [];
     if ($table === 'operators') {
-        $header = ['Оператор', 'Принято', 'Пропущено (клиент потерян)', 'Ушло коллегам', '% ответа', 'Не в сети',
-            'Исходящие всего', 'Исходящие состоялись', 'Время разговоров, сек', 'Ср. разговор, сек', 'Ср. ответ, сек',
-            'В сети, сек', 'Пауза, сек', 'Занятость %', 'Звонков в час'];
-        $report = (new OperatorStatsReport($db, $ops))->fetch($period, null, [], $now);
-        $ins = StatsInsights::build($report['rows'], []);
-        $line = function (array $r, string $name) use ($dec): array {
-            $online = !empty($r['busy_approx']) ? ($r['active_span_sec'] > 0 ? $r['active_span_sec'] : '') : $r['session_sec'];
-            return [$name, $r['answered'], $r['missed_lost'], $r['missed_other'], $dec($r['answer_pct']), $r['offline'],
-                $r['out_total'], $r['out_connected'], $r['talk_sec'], $r['avg_talk_sec'], $r['avg_ring_sec'],
-                $online === null ? '' : $online, $r['pause_sec'] === null ? '' : $r['pause_sec'],
-                $dec($r['busy_pct']), $dec($r['calls_per_hour'])];
-        };
-        foreach (array_merge($ins['active'], $ins['inactive']) as $r) {
-            $rows[] = $line($r, $who((string) $r['extension']));
-        }
-        $rows[] = $line($report['total'], 'Итого');
+        list($header, $rows, $textCols) = StatsCsv::operators((new OperatorStatsReport($db, $ops))->fetch($period, null, [], $now), $names);
     } elseif ($table === 'lost') {
-        $header = ['Дата', 'Номер', 'Ожидание, сек', 'Звонил операторам'];
-        $textCols = [1];
-        foreach ($queue->fetch($period)['lost_calls'] as $it) {
-            if (($it['callback']['kind'] ?? 'none') === 'none') {
-                $rows[] = [$it['at'], $it['client'], $it['wait_sec'], implode(', ', array_map($who, $it['rang']))];
-            }
-        }
+        list($header, $rows, $textCols) = StatsCsv::lost($queue->fetch($period, null, $now)['lost_calls'], $names);
     } else {
-        $header = ['Номер', 'Звонков', 'Принято', 'Потеряно', 'Последний звонок'];
-        $textCols = [0];
-        foreach ($queue->repeatCallers($period, 3, 10000) as $r) {
-            $rows[] = [$r['number'], $r['calls'], $r['answered'], $r['lost'], $r['last_at']];
-        }
+        list($header, $rows, $textCols) = StatsCsv::repeat($queue->repeatCallers($period, 3, 10000));
     }
     $file = 'stats-' . $table . '-' . $period->fromDate() . '-' . $period->toDate() . '.csv';
     header('Content-Type: text/csv; charset=utf-8');

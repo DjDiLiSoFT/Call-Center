@@ -233,6 +233,10 @@ class OperatorStatsReportTest extends DbTestCase
         $this->call('b2', 'outbound', null, '2026-10-18 10:08:00', [
             new AgentOutcome('1001', 'out', 'answered', 5, 55, '2026-10-18 10:08:00', '2026-10-18 10:09:05'),
         ]);
+        // internal calls do not count as presence either
+        $this->call('b6', 'internal', null, '2026-10-18 12:00:00', [
+            new AgentOutcome('1001', 'out', 'answered', 1, 30, '2026-10-18 12:00:00', '2026-10-18 12:00:01'),
+        ]);
         // offline rings do not count as presence
         $this->call('b3', 'queue', '1000', '2026-10-18 18:00:00', [
             new AgentOutcome('1001', 'in', 'offline', 0, 0, '2026-10-18 18:00:00', null),
@@ -267,6 +271,34 @@ class OperatorStatsReportTest extends DbTestCase
         $this->assertSame(3600, $r['work_sec']);
         $this->assertSame(50.0, $r['busy_pct']);
         $this->assertSame(1.0, $r['calls_per_hour']);
+    }
+
+    public function test_total_online_uses_the_same_basis_as_busy(): void
+    {
+        $this->call('s1', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'in', 'answered', 5, 1800, '2026-10-18 10:00:00', '2026-10-18 10:00:05'),
+        ], false, '1004');
+        // 1001 has no queue login: 10:00 .. 10:10 by its calls
+        $this->call('s2', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1001', 'in', 'answered', 0, 600, '2026-10-18 10:00:00', '2026-10-18 10:00:00'),
+        ], false, '1001');
+        $this->db->exec("INSERT INTO agent_sessions (extension, queue, start_at, end_at) VALUES ('1004', '1000', '2026-10-18 09:00:00', '2026-10-18 11:00:00')");
+        $this->db->exec("INSERT INTO agent_pauses (extension, queue, start_at, end_at, reason) VALUES ('1004', '1000', '2026-10-18 09:00:00', '2026-10-18 10:00:00', 'Обед')");
+        $res = $this->report()->fetch($this->period(), null, [], strtotime(self::NOW));
+        $by = $this->rowsBy($res);
+        $this->assertSame(7200, $by['1004']['online_sec']);
+        $this->assertSame(600, $by['1001']['online_sec']);
+        $t = $res['total'];
+        $this->assertSame(7800, $t['online_sec']);
+        $this->assertSame(3600, $t['pause_sec']);
+        $this->assertSame(4200, $t['work_sec']);
+        $this->assertSame($t['online_sec'] - $t['pause_sec'], $t['work_sec']);
+        $this->assertTrue($t['busy_approx']);
+
+        // without approximate rows the total is exact
+        $only = $this->report()->fetch($this->period(), null, ['1004'], strtotime(self::NOW))['total'];
+        $this->assertFalse($only['busy_approx']);
+        $this->assertSame(7200, $only['online_sec']);
     }
 
     public function test_one_operator_by_day_and_by_hour(): void

@@ -20,9 +20,10 @@ $delta = function (string $k, int $good) use ($r, $prev): string {
     return $prev === null ? '' : Delta::html($k, $r[$k], $prev[$k] ?? null, $good);
 };
 $level = $total ? null : ($r['pct_level'] ?? null);
-$approxTip = 'приблизительно: по первому и последнему звонку дня';
+$approxTip = ($total ? 'сумма по операторам; у части из них ' : '') . 'приблизительно: по первому и последнему звонку дня';
 $approx = !empty($r['busy_approx']);
-$online = $approx ? ($r['active_span_sec'] > 0 ? $r['active_span_sec'] : null) : $r['session_sec'];
+// the basis of busy % / calls per hour: session, or the active span (≈); for Итого the sum of the rows' bases
+$online = (int) ($r['online_sec'] ?? 0) > 0 ? (int) $r['online_sec'] : null;
 $num = function (?float $v): string {
     return $v === null ? '—' : str_replace('.', ',', (string) $v);
 };
@@ -37,7 +38,7 @@ $num = function (?float $v): string {
 <?php endif; ?>
       <<?= $c ?> class="num" data-sort="<?= (int) $r['answered'] ?>"><?= (int) $r['answered'] ?><?= $delta('answered', 1) ?>
         <span class="sub2" title="Исходящие: состоялось <?= (int) $r['out_connected'] ?> из <?= (int) $r['out_total'] ?>">исх. <?= (int) $r['out_connected'] ?> / <?= (int) $r['out_total'] ?></span></<?= $c ?>>
-      <<?= $c ?> class="num" data-sort="<?= (int) $r['missed_lost'] ?>"><span class="<?= $r['missed_lost'] > 0 ? 'miss-lost' : '' ?>"><?= (int) $r['missed_lost'] ?></span><?= $delta('missed_lost', -1) ?>
+      <<?= $c ?> class="num<?= !empty($r['missed_high']) ? ' missed-high' : '' ?>" data-sort="<?= (int) $r['missed_lost'] ?>"<?= !empty($r['missed_high']) ? ' title="Потерянных клиентов заметно больше, чем в среднем у операторов"' : '' ?>><span class="<?= $r['missed_lost'] > 0 ? 'miss-lost' : '' ?>"><?= (int) $r['missed_lost'] ?></span><?= $delta('missed_lost', -1) ?>
 <?php if ($r['missed_other'] > 0): ?>
         <span class="sub2" title="Оператор не ответил, но звонок взял коллега — клиент обслужен">ушло коллегам <?= (int) $r['missed_other'] ?></span>
 <?php endif; ?>

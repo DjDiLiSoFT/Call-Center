@@ -11,11 +11,17 @@ use PDO;
  */
 class QueueSummaryReport
 {
-    /** wait buckets: label => lower bound in seconds (upper bound = the next one, exclusive) */
-    public const BUCKETS = ['0–5' => 0, '5–10' => 5, '10–15' => 10, '15–30' => 15, '30+' => 30];
+    /**
+     * wait buckets: label => lowest second; the upper end is inclusive (6–10 = 6..10 s), so the
+     * first two buckets are exactly the service level (answered within SLA_SEC = 10 s)
+     */
+    public const BUCKETS = ['0–5' => 0, '6–10' => 6, '11–15' => 11, '16–30' => 16, '31+' => 31];
 
     /** answered within this many seconds counts towards the service level */
     public const SLA_SEC = 10;
+
+    /** a lost call is judged "called back or not" once it is this old (withCallbacks looks 24 h ahead) */
+    public const CALLBACK_WINDOW = 86400;
 
     /** a lost call with a shorter wait is "dropped at once" */
     public const SHORT_SEC = 5;
@@ -68,10 +74,15 @@ class QueueSummaryReport
      * summary() plus called_back / called_back_pct (lost calls with a number that were called back
      * or got through by themselves) and lost_calls (those lost calls, newest first).
      *
+     * Only lost calls at least CALLBACK_WINDOW old (relative to $now) are judged: a call lost a few
+     * minutes ago has had no time to be called back, so counting it would make a running period
+     * look worse than a finished one. called_back_base = how many were judged.
+     *
      * @param array[]|null $lostCalls lostCalls() of this period or of a wider one (filtered here),
      *                                so one callback batch can serve several periods; null = load
+     * @param int|null $now default time()
      */
-    public function fetch(Period $p, ?array $lostCalls = null): array
+    public function fetch(Period $p, ?array $lostCalls = null, ?int $now = null): array
     {
         $s = $this->summary($p);
         if ($lostCalls === null) {
@@ -80,14 +91,21 @@ class QueueSummaryReport
         $mine = array_values(array_filter($lostCalls, function (array $it) use ($p): bool {
             return $it['at'] >= $p->from && $it['at'] <= $p->to;
         }));
+        $ripe = date('Y-m-d H:i:s', ($now ?? time()) - self::CALLBACK_WINDOW);
         $back = 0;
+        $base = 0;
         foreach ($mine as $it) {
+            if ($it['at'] > $ripe) {
+                continue;
+            }
+            $base++;
             if (in_array($it['callback']['kind'] ?? 'none', ['callback', 'got_through'], true)) {
                 $back++;
             }
         }
         $s['called_back'] = $back;
-        $s['called_back_pct'] = self::pct($back, count($mine));
+        $s['called_back_base'] = $base;
+        $s['called_back_pct'] = self::pct($back, $base);
         $s['lost_calls'] = $mine;
         return $s;
     }

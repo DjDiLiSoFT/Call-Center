@@ -33,7 +33,7 @@ class StatsTemplateTest extends TestCase
         return [
             'total' => $total, 'answered' => $answered, 'lost' => $total - $answered, 'lost_short' => 1,
             'lost_pct' => $total ? round(($total - $answered) * 100 / $total, 1) : null, 'sla_pct' => 91.0,
-            'avg_wait' => 5, 'max_wait' => 111, 'called_back' => 1, 'called_back_pct' => 50.0,
+            'avg_wait' => 5, 'max_wait' => 111, 'called_back' => 1, 'called_back_base' => 2, 'called_back_pct' => 50.0,
             'lost_calls' => [],
         ];
     }
@@ -55,8 +55,8 @@ class StatsTemplateTest extends TestCase
     private function vars(Period $p, array $over = []): array
     {
         $rows = [
-            $this->row('1001', 'Иван <b>', 50, 2, 9),
-            $this->row('1002', 'Мария', 40, 0, 0, ['session_sec' => 7200, 'pause_sec' => 600, 'pauses_by_reason' => ['Обед <x>' => 600]]),
+            $this->row('1001', 'Иван <b>', 50, 12, 9),
+            $this->row('1002', 'Мария', 40, 0, 0, ['session_sec' => 7200, 'pause_sec' => 600, 'active_span_sec' => 100, 'pauses_by_reason' => ['Обед <x>' => 600]]),
             $this->row('1009', '1009', 0, 0, 0, ['out_total' => 0, 'offline' => 300]),
         ];
         $s = $this->summary(120, 112);
@@ -68,8 +68,8 @@ class StatsTemplateTest extends TestCase
             'summary' => [
                 'title' => 'Свой период', 'period' => $p, 's' => $s, 'prev' => $this->summary(100, 98),
                 'prevLabel' => '13.10 — 19.10', 'byHour' => [9 => ['answered' => 10, 'lost' => 1]],
-                'waits' => ['answered' => ['0–5' => 3, '5–10' => 1, '10–15' => 0, '15–30' => 0, '30+' => 0],
-                    'lost' => ['0–5' => 1, '5–10' => 0, '10–15' => 0, '15–30' => 0, '30+' => 1]],
+                'waits' => ['answered' => ['0–5' => 3, '6–10' => 1, '11–15' => 0, '16–30' => 0, '31+' => 0],
+                    'lost' => ['0–5' => 1, '6–10' => 0, '11–15' => 0, '16–30' => 0, '31+' => 1]],
                 'byDay' => ['2026-10-20' => ['answered' => 5, 'lost' => 1], '2026-10-21' => ['answered' => 6, 'lost' => 0]],
                 'heatmap' => null, 'callbacks' => true,
             ],
@@ -92,7 +92,8 @@ class StatsTemplateTest extends TestCase
             $this->assertStringContainsString('>' . $label . '<', $html, $label);
         }
         $this->assertStringContainsString('из них сбросили сразу 1', $html);
-        $this->assertStringContainsString('1 из 1', $html, 'called back N of M lost with a number');
+        $this->assertStringContainsString('1 из 2', $html, 'called back N of M lost calls old enough to judge');
+        $this->assertStringContainsString('за последние 24 ч ещё рано судить', $html);
         $this->assertStringContainsString('class="dlt', $html);
         $this->assertStringContainsString('По часам', $html);
         $this->assertStringContainsString('Ожидание ответа', $html);
@@ -102,10 +103,16 @@ class StatsTemplateTest extends TestCase
 
         // operator table: missed split, busy, link to the operator card, escaping
         $this->assertStringContainsString('ушло коллегам 9', $html);
+        $head = substr($html, strpos($html, '<thead>'), strpos($html, '</thead>') - strpos($html, '<thead>'));
+        $this->assertStringContainsString('<td colspan="' . substr_count($head, '<th ') . '">', $html, 'the inactive toggle spans the whole table');
+        $this->assertStringContainsString('class="num missed-high"', $html, '12 lost clients is well above the average');
         $this->assertStringContainsString('?p=operator&amp;ext=1001&amp;preset=custom&amp;from=2026-10-20&amp;to=2026-10-21', $html);
         $this->assertStringContainsString('Иван &lt;b&gt;', $html);
         $this->assertStringNotContainsString('Иван <b>', $html);
         $this->assertStringContainsString('Обед &lt;x&gt;', $html);
+        // Итого «В сети»: session of 1002 + span of 1001, approximate because 1001 is
+        $foot = substr($html, strpos($html, '<tfoot>'));
+        $this->assertStringContainsString('>≈4:00:00<', $foot);
         $this->assertStringContainsString('по первому и последнему звонку дня', $html);
         $this->assertStringContainsString('Занятость', $html);
         $this->assertStringContainsString('Звонков в час', $html);
@@ -198,5 +205,23 @@ class StatsTemplateTest extends TestCase
         $this->assertStringContainsString('data-tip=', $html);
         $this->assertStringContainsString('?p=journal&amp;ext=1002&amp;preset=custom', $html);
         $this->assertStringContainsString('?p=recordings&amp;ext=1002&amp;preset=custom', $html);
+    }
+    public function test_stats_page_refuses_periods_over_a_year(): void
+    {
+        date_default_timezone_set('Asia/Tashkent');
+        $html = $this->view()->render('stats', ['period' => new Period('custom', '2024-01-01', '2026-10-21'), 'default' => false, 'overYear' => true]);
+        $this->assertStringContainsString('Выберите период не длиннее года', $html);
+        $this->assertStringContainsString('name="preset"', $html, 'the filter stays');
+        $this->assertStringNotContainsString('Поступило', $html);
+        $this->assertStringNotContainsString('data-autorefresh', $html);
+    }
+
+    public function test_default_view_refreshes_every_minute(): void
+    {
+        date_default_timezone_set('Asia/Tashkent');
+        $today = new Period('today', '2026-10-21', '2026-10-21');
+        $v = $this->vars($today, ['default' => true]);
+        $v['summary']['byDay'] = null;
+        $this->assertStringContainsString('data-autorefresh="60"', $this->view()->render('stats', $v));
     }
 }

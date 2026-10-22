@@ -10,7 +10,8 @@ use CallStats\Web\View;
 $dl = function (string $k, int $good) use ($s, $prev): string {
     return $prev === null ? '' : Delta::html($k, $s[$k], $prev[$k] ?? null, $good);
 };
-$lostWithNumber = count($s['lost_calls'] ?? []);
+$judged = (int) ($s['called_back_base'] ?? 0);
+$early = count($s['lost_calls'] ?? []) - $judged;
 $tiles = [
     ['Поступило', (string) $s['total'], $dl('total', 0), '', 'Все входящие звонки клиентов за период: через очередь и напрямую на операторов'],
     ['Обслужено', (string) $s['answered'], $dl('answered', 1), '', 'Звонки, на которые ответил оператор'],
@@ -21,9 +22,10 @@ $tiles = [
     ['Ожидание ср. / макс.', Format::clock($s['avg_wait']) . ' / ' . Format::clock($s['max_wait']), $dl('avg_wait', -1), '',
         'Сколько клиент ждал ответа: в среднем по принятым звонкам и самое долгое ожидание среди всех'],
     $callbacks
-        ? ['Перезвонили потерянным', $s['called_back'] . ' из ' . $lostWithNumber, $dl('called_back_pct', 1),
-            $lostWithNumber > 0 ? Format::pct($s['called_back_pct']) : '',
-            'Потерянные звонки с номером, по которым оператор перезвонил или клиент сам дозвонился в течение суток']
+        ? ['Перезвонили потерянным', $s['called_back'] . ' из ' . $judged, $dl('called_back_pct', 1),
+            ($judged > 0 ? Format::pct($s['called_back_pct']) : '') . ($early > 0 ? ($judged > 0 ? ' · ' : '') . 'ещё рано: ' . $early : ''),
+            'Потерянные звонки с номером, по которым оператор перезвонил или клиент сам дозвонился в течение суток. '
+            . 'Считаются звонки старше суток: за последние 24 ч ещё рано судить, поэтому сравнение с прошлым периодом честное']
         : ['Перезвонили потерянным', '—', '', 'период длиннее 92 дней', 'Для таких длинных периодов перезвоны не считаются'],
 ];
 ?>

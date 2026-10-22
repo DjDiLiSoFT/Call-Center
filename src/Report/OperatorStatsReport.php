@@ -138,6 +138,7 @@ class OperatorStatsReport
         $total['session_sec'] = $hasTimeline ? 0 : null;
         $total['pause_sec'] = $hasTimeline ? 0 : null;
         $work = 0;
+        $online = 0;
         $approx = false;
         foreach ($rows as $r) {
             foreach (['answered', 'missed', 'missed_lost', 'missed_other', 'offline', 'out_total', 'out_connected',
@@ -152,12 +153,15 @@ class OperatorStatsReport
                 }
             }
             $work += (int) $r['work_sec'];
+            $online += (int) $r['online_sec'];
             $approx = $approx || !empty($r['busy_approx']);
         }
         $total['answer_pct'] = self::pct($total['answered'], $total['missed']);
         $total['avg_talk_sec'] = $total['answered'] > 0 ? (int) round($total['_in_talk'] / $total['answered']) : 0;
         $total['avg_ring_sec'] = $total['answered'] > 0 ? (int) round($total['_in_ring'] / $total['answered']) : 0;
         $w = self::workload($total['talk_sec'], $total['answered'] + $total['out_total'], $work, 0, 0);
+        // the same basis as busy %: each row's session (or active span when there is none)
+        $w['online_sec'] = $online;
         $w['busy_approx'] = $approx;
         return array_merge($total, $w);
     }
@@ -166,7 +170,9 @@ class OperatorStatsReport
      * Working time and its use. Working time = session − pauses when the session is known (> 0),
      * otherwise the active span (first to last call of each day; busy_approx = true).
      *
-     * @return array{work_sec:int, busy_approx:bool, busy_pct:?float, calls_per_hour:?float}
+     * online_sec = the session, or the active span when it is approximate; work_sec = online minus pauses.
+     *
+     * @return array{online_sec:int, work_sec:int, busy_approx:bool, busy_pct:?float, calls_per_hour:?float}
      */
     public static function workload(int $talkSec, int $calls, ?int $sessionSec, ?int $pauseSec, int $spanSec): array
     {
@@ -174,6 +180,7 @@ class OperatorStatsReport
         $work = $approx ? $spanSec : $sessionSec - (int) $pauseSec;
         $work = max(0, $work);
         return [
+            'online_sec' => $approx ? $spanSec : (int) $sessionSec,
             'work_sec' => $work,
             'busy_approx' => $approx,
             'busy_pct' => $work > 0 ? round(min(100, $talkSec * 100 / $work), 1) : null,
@@ -207,7 +214,7 @@ class OperatorStatsReport
                 MAX(CASE WHEN ca.answered_at IS NOT NULL THEN ca.answered_at + INTERVAL ca.talk_sec SECOND
                          ELSE ca.first_ring_at + INTERVAL ca.ring_sec SECOND END) AS last
             FROM call_agents ca JOIN calls c ON c.id = ca.call_id
-            WHERE ca.outcome <> 'offline' AND c.started_at >= ? AND c.started_at <= ?";
+            WHERE ca.outcome <> 'offline' AND c.kind <> 'internal' AND c.started_at >= ? AND c.started_at <= ?";
         $args = [$p->from, $p->to];
         if ($queue !== null && $queue !== '') {
             $sql .= ' AND c.queue = ?';
@@ -240,7 +247,7 @@ class OperatorStatsReport
             'out_total' => 0, 'out_connected' => 0, 'talk_sec' => 0,
             'avg_talk_sec' => 0, 'avg_ring_sec' => 0,
             'session_sec' => null, 'pause_sec' => null, 'pauses_by_reason' => [],
-            'active_span_sec' => 0, 'work_sec' => 0, 'busy_approx' => true, 'busy_pct' => null, 'calls_per_hour' => null,
+            'active_span_sec' => 0, 'online_sec' => 0, 'work_sec' => 0, 'busy_approx' => true, 'busy_pct' => null, 'calls_per_hour' => null,
             '_in_talk' => 0, '_in_ring' => 0,
         ];
     }

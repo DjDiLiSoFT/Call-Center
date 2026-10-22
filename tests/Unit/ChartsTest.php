@@ -112,13 +112,13 @@ class ChartsTest extends TestCase
     public function test_wait_bars_group_answered_and_lost_by_bucket(): void
     {
         $svg = Charts::waitBars([
-            'answered' => ['0–5' => 10, '5–10' => 5, '10–15' => 0, '15–30' => 0, '30+' => 1],
-            'lost' => ['0–5' => 2, '5–10' => 0, '10–15' => 0, '15–30' => 0, '30+' => 3],
+            'answered' => ['0–5' => 10, '6–10' => 5, '11–15' => 0, '16–30' => 0, '31+' => 1],
+            'lost' => ['0–5' => 2, '6–10' => 0, '11–15' => 0, '16–30' => 0, '31+' => 3],
         ]);
         $this->assertWellFormed($svg);
         $this->assertSame(10, substr_count($svg, 'data-tip='));
         $this->assertStringContainsString('Ответили за 0–5 сек: 10 (63%)', $svg);
-        $this->assertStringContainsString('Положили трубку, прождав 30+ сек: 3 (60%)', $svg);
+        $this->assertStringContainsString('Положили трубку, прождав 31+ сек: 3 (60%)', $svg);
         $this->assertSame(5, substr_count($svg, 'class="bar '));
         $this->assertStringContainsString('class="chart-legend"', $svg);
         $this->assertStringContainsString('Нет данных', Charts::waitBars(['answered' => ['0–5' => 0], 'lost' => ['0–5' => 0]]));

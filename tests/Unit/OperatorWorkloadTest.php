@@ -20,13 +20,13 @@ class OperatorWorkloadTest extends TestCase
     public function test_workload_from_session_minus_pause(): void
     {
         $w = OperatorStatsReport::workload(1800, 4, 7200, 3600, 999);
-        $this->assertSame(['work_sec' => 3600, 'busy_approx' => false, 'busy_pct' => 50.0, 'calls_per_hour' => 4.0], $w);
+        $this->assertSame(['online_sec' => 7200, 'work_sec' => 3600, 'busy_approx' => false, 'busy_pct' => 50.0, 'calls_per_hour' => 4.0], $w);
     }
 
     public function test_workload_falls_back_to_the_active_span(): void
     {
         $w = OperatorStatsReport::workload(180, 3, null, null, 900);
-        $this->assertSame(['work_sec' => 900, 'busy_approx' => true, 'busy_pct' => 20.0, 'calls_per_hour' => 12.0], $w);
+        $this->assertSame(['online_sec' => 900, 'work_sec' => 900, 'busy_approx' => true, 'busy_pct' => 20.0, 'calls_per_hour' => 12.0], $w);
         // a session of zero length is unknown too
         $this->assertTrue(OperatorStatsReport::workload(180, 3, 0, 0, 900)['busy_approx']);
     }

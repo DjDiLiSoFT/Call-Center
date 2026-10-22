@@ -9,6 +9,7 @@ use CallStats\Web\View;
 /** @var array[] $sections each: title, period, report, insights, prevLabel, line (QueueSummaryReport::summary) */
 /** @var array $clients period, tooLong (int|null), lost (items with callback none), repeat */
 /** @var array $names extension => display name */
+/** @var bool $overYear the chosen period is longer than a year: only the filter and a message */
 $csv = function (string $table, \CallStats\Report\Period $p): string {
     return '?' . http_build_query(array_merge(['p' => 'stats_csv', 'table' => $table], $p->query()));
 };
@@ -23,7 +24,7 @@ $line = function (array $l): string {
         . ' · ответ за 10 сек ' . Format::pct($l['sla_pct']);
 };
 $series = ['answered' => ['Обслужено', 'var(--accent)'], 'lost' => ['Потеряно', 'var(--danger)']];
-$sum = $summary;
+$sum = $summary ?? null;
 ?>
 <form method="get" action="" class="filters card compact">
   <input type="hidden" name="p" value="stats">
@@ -34,6 +35,9 @@ $sum = $summary;
 <?php endif; ?>
 </form>
 
+<?php if (!empty($overYear)): ?>
+<p class="muted panel-empty">Выберите период не длиннее года.</p>
+<?php return; endif; ?>
 <p class="muted page-note" data-autorefresh="60">Стрелки ▲▼ — сравнение с прошлым периодом такой же длины. Страница обновляется сама раз в минуту.</p>
 
 <section class="stats-block">
