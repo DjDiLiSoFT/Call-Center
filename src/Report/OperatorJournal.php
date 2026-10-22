@@ -171,6 +171,33 @@ class OperatorJournal
         return $all;
     }
 
+    /**
+     * All-operators view: a queue call that rang several operators and was missed by all of them
+     * becomes one row whose 'ext' lists everyone it rang ("1001, 1002"). Items without call_id stay.
+     *
+     * @param array[] $items sorted by at, each with 'ext'
+     * @return array[]
+     */
+    public static function mergeSharedMissed(array $items): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($items as $it) {
+            if ($it['type'] !== 'in_missed' || $it['call_id'] === null) {
+                $out[] = $it;
+                continue;
+            }
+            $key = (string) $it['call_id'];
+            if (isset($seen[$key])) {
+                $out[$seen[$key]]['ext'] .= ', ' . $it['ext'];
+                continue;
+            }
+            $seen[$key] = count($out);
+            $out[] = $it;
+        }
+        return $out;
+    }
+
     /** Phone number key for matching: the last 9 digits of its digits ('' when there are none). */
     public static function normalizeNumber(string $number): string
     {
@@ -271,13 +298,15 @@ class OperatorJournal
         if ($key === '') {
             return [];
         }
-        $like = '%' . addcslashes($key, '\\%_');
+        // a short number (< 9 digits) must match exactly, or LIMIT would fill up with longer look-alikes
+        $exact = strlen($key) < 9;
+        $like = $exact ? $key : '%' . addcslashes($key,'\\%_');
         $st = $this->db->prepare(
             "SELECT c.id, c.kind, c.started_at, c.client_number, c.answered_by, c.talk_sec, c.wait_sec, c.recording_file,
                     (SELECT ca.extension FROM call_agents ca WHERE ca.call_id = c.id AND ca.direction = 'out' ORDER BY ca.id LIMIT 1) AS out_ext,
                     (SELECT ca.outcome FROM call_agents ca WHERE ca.call_id = c.id AND ca.direction = 'out' ORDER BY ca.id LIMIT 1) AS out_outcome
              FROM calls c
-             WHERE c.kind <> 'internal' AND c.client_number LIKE ?
+             WHERE c.kind <> 'internal' AND c.client_number " . ($exact ? '=' : 'LIKE') . " ?
              ORDER BY c.started_at DESC, c.id DESC
              LIMIT " . max(1, min(1000, $limit))
         );

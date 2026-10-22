@@ -206,8 +206,10 @@ initRowPlayers(document);
       var f = drawer.querySelectorAll('button, a[href], input, select, [tabindex]:not([tabindex="-1"])');
       if (!f.length) { return; }
       var first = f[0], last = f[f.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      var a = document.activeElement;
+      if (!drawer.contains(a) || a === drawer) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+      else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
     }
   });
 }());
@@ -221,14 +223,15 @@ initRowPlayers(document);
   try {
     if (!params.has('ext')) {
       var saved = window.localStorage.getItem(KEY);
-      if (saved) {
+      if (saved && saved !== '*') {
         params.set('ext', saved);
         window.location.replace(window.location.pathname + '?' + params.toString());
       }
       return;
     }
     var ext = page.getAttribute('data-ext');
-    if (ext) { window.localStorage.setItem(KEY, ext); } else { window.localStorage.removeItem(KEY); }
+    // «Все операторы» is heavy, so only a single operator is remembered
+    if (ext && ext !== '*') { window.localStorage.setItem(KEY, ext); } else if (!ext) { window.localStorage.removeItem(KEY); }
   } catch (e) { /* storage unavailable: nothing to remember */ }
 }());
 

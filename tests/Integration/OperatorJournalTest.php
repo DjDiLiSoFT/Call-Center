@@ -299,6 +299,15 @@ class OperatorJournalTest extends DbTestCase
         $this->assertSame([], $this->journal()->clientHistory('%'));
     }
 
+    public function test_client_history_short_number_is_not_crowded_out_by_longer_lookalikes(): void
+    {
+        $this->call('s1', 'direct', null, '2026-10-17 09:00:00', [], ['clientNumber' => '5512']);
+        $this->call('s2', 'direct', null, '2026-10-18 09:00:00', [], ['clientNumber' => '905512']);
+        $this->call('s3', 'direct', null, '2026-10-18 10:00:00', [], ['clientNumber' => '915512']);
+
+        $this->assertSame([1], array_column($this->journal()->clientHistory('5512', 1), 'call_id'));
+    }
+
     public function test_fetch_all_merges_operators_with_ext(): void
     {
         $this->call('a1', 'queue', '1000', '2026-10-18 10:00:00', [

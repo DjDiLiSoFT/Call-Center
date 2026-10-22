@@ -3,6 +3,7 @@
 namespace CallStats\Tests\Unit;
 
 use CallStats\Report\JournalTable;
+use CallStats\Report\OperatorJournal;
 use CallStats\Web\Format;
 use PHPUnit\Framework\TestCase;
 
@@ -104,6 +105,20 @@ class JournalTableTest extends TestCase
             '2026-10-20' => ['answered' => 1, 'missed' => 1, 'out' => 0],
             '2026-10-21' => ['answered' => 0, 'missed' => 0, 'out' => 1],
         ], JournalTable::days($rows));
+    }
+
+    public function test_merge_shared_missed_keeps_one_row_per_rung_call(): void
+    {
+        $merged = OperatorJournal::mergeSharedMissed([
+            $this->item('2026-10-20 09:05:00', 'in_missed', ['call_id' => 5, 'ext' => '1001']),
+            $this->item('2026-10-20 09:05:00', 'in_missed', ['call_id' => 5, 'ext' => '1002']),
+            $this->item('2026-10-20 09:05:00', 'in_answered', ['call_id' => 6, 'ext' => '1002']),
+            $this->item('2026-10-20 09:06:00', 'in_missed', ['call_id' => 7, 'ext' => '1001']),
+            $this->item('2026-10-20 09:06:00', 'in_missed', ['call_id' => 7, 'ext' => '1004']),
+            $this->item('2026-10-20 09:07:00', 'in_missed', ['call_id' => null, 'ext' => '1001']),
+            $this->item('2026-10-20 09:07:00', 'in_missed', ['call_id' => null, 'ext' => '1002']),
+        ]);
+        $this->assertSame(['1001, 1002', '1002', '1001, 1004', '1001', '1002'], array_column($merged, 'ext'));
     }
 
     public function test_rows_carry_operator_and_callback(): void

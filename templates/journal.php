@@ -55,8 +55,10 @@ $sourcesBlock = function (?string $json) {
     return '<details class="src"><summary>Источник</summary><pre>' . View::e(implode("\n", $lines)) . '</pre></details>';
 };
 $name = function ($e) use ($operators): string {
-    $e = (string) $e;
-    return $operators[$e] ?? $e;
+    // a merged missed row lists several operators: "1001, 1002"
+    return implode(', ', array_map(function (string $one) use ($operators): string {
+        return $operators[$one] ?? $one;
+    }, explode(', ', (string) $e)));
 };
 $arrows = ['in' => '←', 'out' => '→', 'internal' => '⇄'];
 $arrowTitles = ['in' => 'входящий', 'out' => 'исходящий', 'internal' => 'внутренний'];
@@ -94,6 +96,8 @@ $cols = $all ? 6 : 5;
 <div data-journal-page data-ext="<?= View::e($ext) ?>" hidden></div>
 <?php if ($ext === ''): ?>
 <p class="muted">Выберите оператора, чтобы увидеть историю его звонков.</p>
+<?php elseif (!empty($tooLong)): ?>
+<p class="muted">Период слишком длинный: для <?= $ext === '*' ? 'всех операторов' : 'одного оператора' ?> журнал показывается максимум за <?= (int) $tooLong ?> <?= \CallStats\Web\Charts::plural((int) $tooLong, 'день', 'дня', 'дней') ?>. Выберите период короче.</p>
 <?php else: ?>
 <?php if ($kpi): ?>
 <div class="tiles kpi-tiles">

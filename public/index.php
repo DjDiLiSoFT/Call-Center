@@ -101,14 +101,18 @@ $journalData = function (array $get) use ($db, $ops, $locator): array {
     $kpi = null;
     $kpiPrev = null;
     $timeline = null;
-    if ($ext !== '') {
+    // the journal loads every row of the period, so long periods are refused instead of stalling
+    $maxDays = $ext === '*' ? 31 : 92;
+    $span = (int) round((strtotime($period->toDate()) - strtotime($period->fromDate())) / 86400) + 1;
+    $tooLong = $ext !== '' && $span > $maxDays ? $maxDays : null;
+    if ($ext !== '' && $tooLong === null) {
         $journal = new OperatorJournal($db);
         $stats = new OperatorStatsReport($db, $ops);
         $exts = $ext === '*' ? [] : [$ext];
         $report = $stats->fetch($period, null, $exts, $now);
         $prevReport = $stats->fetch($period->previous($now), null, $exts, $now);
         if ($ext === '*') {
-            $items = $journal->fetchAll($period, array_keys($operators), true);
+            $items = OperatorJournal::mergeSharedMissed($journal->fetchAll($period, array_keys($operators), true));
             $kpi = $report['total'];
             $kpiPrev = $prevReport['total'];
         } else {
@@ -131,10 +135,12 @@ $journalData = function (array $get) use ($db, $ops, $locator): array {
         'kpi' => $kpi,
         'kpiPrev' => $kpiPrev,
         'timeline' => $timeline,
+        'tooLong' => $tooLong,
         'counts' => JournalTable::counts($searched),
         'allCount' => count(JournalTable::filterType($searched, '', $t['noise'] === '1')),
         'rows' => $filtered,
-        'days' => JournalTable::days($filtered),
+        // day totals describe the whole day, whichever chip is active
+        'days' => JournalTable::days($searched),
     ];
 };
 
@@ -158,7 +164,9 @@ $app->route('journal_csv', function (array $get, array $post) use ($journalData)
         $opExt = $d['ext'] === '*' ? (string) $r['ext'] : $d['ext'];
         $out[] = [
             $r['at'],
-            $opExt === '' ? '' : (($names[$opExt] ?? $opExt) !== $opExt ? $names[$opExt] . ' (' . $opExt . ')' : $opExt),
+            implode(', ', array_map(function (string $one) use ($names): string {
+                return ($names[$one] ?? $one) !== $one ? $names[$one] . ' (' . $one . ')' : $one;
+            }, $opExt === '' ? [] : explode(', ', $opExt))),
             $dirs[$r['dir']],
             $r['number'],
             $r['result'],
@@ -171,7 +179,7 @@ $app->route('journal_csv', function (array $get, array $post) use ($journalData)
         . '-' . $d['period']->fromDate() . '-' . $d['period']->toDate() . '.csv';
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $file . '"');
-    return Csv::build(['Дата', 'Оператор', 'Направление', 'Номер', 'Результат', 'Длительность, сек', 'Источник', 'Перезвон'], $out);
+    return Csv::build(['Дата', 'Оператор', 'Направление', 'Номер', 'Результат', 'Длительность, сек', 'Источник', 'Перезвон'], $out, [3]);
 });
 
 // Raw response: HTML fragment with the call history of one client number (journal drawer).
