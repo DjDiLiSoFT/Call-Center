@@ -203,6 +203,44 @@ class QueueSummaryReport
     }
 
     /**
+     * «Кому не перезвонили»: one row per client number (last 9 digits) instead of one per attempt.
+     * Row: client (newest original), at (last attempt), first_at, times, max_wait, rang (union, sorted).
+     *
+     * @param array[] $lost lost items, newest first (at, client, wait_sec, rang)
+     * @return array[] newest last attempt first
+     */
+    public static function groupLostByNumber(array $lost): array
+    {
+        $out = [];
+        foreach ($lost as $it) {
+            $key = OperatorJournal::normalizeNumber((string) $it['client']);
+            $key = $key === '' ? 'raw:' . $it['client'] : $key;
+            if (!isset($out[$key])) {
+                $out[$key] = ['client' => (string) $it['client'], 'at' => $it['at'], 'first_at' => $it['at'],
+                    'times' => 0, 'max_wait' => 0, 'rang' => []];
+            }
+            $g = &$out[$key];
+            $g['times']++;
+            $g['max_wait'] = max($g['max_wait'], (int) $it['wait_sec']);
+            if ($it['at'] > $g['at']) {
+                $g['at'] = $it['at'];
+                $g['client'] = (string) $it['client'];
+            }
+            if ($it['at'] < $g['first_at']) {
+                $g['first_at'] = $it['at'];
+            }
+            $g['rang'] = array_values(array_unique(array_merge($g['rang'], array_map('strval', $it['rang']))));
+            sort($g['rang'], SORT_NATURAL);
+            unset($g);
+        }
+        $out = array_values($out);
+        usort($out, function (array $a, array $b): int {
+            return strcmp($b['at'], $a['at']);
+        });
+        return $out;
+    }
+
+    /**
      * @param array<int,int> $waits wait seconds => calls
      * @return array<string,int> every bucket label => calls
      */

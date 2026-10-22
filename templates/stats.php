@@ -79,7 +79,7 @@ $sum = $summary;
 <div class="client-grid">
   <section class="card panel">
     <h2 class="panel-title">Кому не перезвонили
-      <span class="panel-sub"><?= View::e($dates($clients['period'])) ?><?= $clients['tooLong'] === null ? ' · ' . count($clients['lost']) : '' ?></span>
+      <span class="panel-sub"><?= View::e($dates($clients['period'])) ?><?= $clients['tooLong'] === null ? ' · ' . count($clients['lost']) . ' ' . \CallStats\Web\Charts::plural(count($clients['lost']), 'номер', 'номера', 'номеров') : '' ?></span>
 <?php if ($clients['tooLong'] === null): ?>
       <?= $csvLink('lost', $clients['period']) ?>
 <?php endif; ?>

@@ -4,6 +4,7 @@ namespace CallStats\Tests\Unit;
 
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
+use CallStats\Report\QueueSummaryReport;
 use CallStats\Report\StatsInsights;
 use CallStats\Web\View;
 use PHPUnit\Framework\TestCase;
@@ -75,7 +76,7 @@ class StatsTemplateTest extends TestCase
             'sections' => [$this->section($p, $rows)],
             'clients' => [
                 'period' => $p, 'tooLong' => null,
-                'lost' => [$this->lostItem('2026-10-20 10:00:00', '+998907778899', 'none')],
+                'lost' => QueueSummaryReport::groupLostByNumber([$this->lostItem('2026-10-20 10:00:00', '+998907778899', 'none')]),
                 'repeat' => [['number' => '+998905556677', 'calls' => 4, 'answered' => 3, 'lost' => 1, 'last_at' => '2026-10-21 09:00:00']],
             ],
         ], $over);
@@ -147,6 +148,7 @@ class StatsTemplateTest extends TestCase
         for ($i = 0; $i < 53; $i++) {
             $v['clients']['lost'][] = $this->lostItem('2026-10-20 10:00:00', '+99890777' . sprintf('%04d', $i), 'none');
         }
+        $v['clients']['lost'] = QueueSummaryReport::groupLostByNumber($v['clients']['lost']);
         $html = $this->view()->render('stats', $v);
         $this->assertSame(50, substr_count($html, 'data-number="+99890777'));
         $this->assertStringContainsString('ещё 3', $html);

@@ -2,8 +2,8 @@
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
-/** «Кому не перезвонили»: lost calls with callback kind 'none', newest first. */
-/** @var array[] $rows QueueSummaryReport lost items (callback none) */
+/** «Кому не перезвонили»: one row per client number whose lost calls got no callback, newest first. */
+/** @var array[] $rows QueueSummaryReport::groupLostByNumber() rows */
 /** @var array $names extension => display name */
 $max = 50;
 $more = count($rows) - $max;
@@ -13,16 +13,17 @@ $more = count($rows) - $max;
 <?php else: ?>
 <div class="table-wrap">
 <table class="clients">
-  <thead><tr><th>Дата</th><th>Номер</th><th class="num">Ожидание</th><th>Звонил операторам</th></tr></thead>
+  <thead><tr><th>Последний звонок</th><th>Номер</th><th class="num">Раз</th><th class="num">Ждал до</th><th>Звонил операторам</th></tr></thead>
   <tbody>
 <?php foreach (array_slice($rows, 0, $max) as $r): ?>
     <tr>
       <td class="nowrap"><?= View::e(Format::ruDateTime($r['at'])) ?></td>
       <td><button type="button" class="num js-client" data-number="<?= View::e($r['client']) ?>" title="История номера"><?= View::e($r['client']) ?></button></td>
-      <td class="num"><?= View::e(Format::humanDuration((int) $r['wait_sec'])) ?></td>
-      <td><?= View::e(implode(', ', array_map(function ($e) use ($names) {
+      <td class="num"<?= $r['times'] > 1 ? ' title="первый раз: ' . View::e(Format::ruDateTime($r['first_at'])) . '"' : '' ?>><?= (int) $r['times'] ?></td>
+      <td class="num"><?= View::e(Format::humanDuration((int) $r['max_wait'])) ?></td>
+      <td><?= $r['rang'] ? View::e(implode(', ', array_map(function ($e) use ($names) {
           return $names[(string) $e] ?? (string) $e;
-      }, $r['rang']))) ?: '<span class="muted">—</span>' ?></td>
+      }, $r['rang']))) : '<span class="muted" title="клиент ждал в очереди, но ни один телефон не зазвонил: все заняты, на паузе или не в сети">операторы были недоступны</span>' ?></td>
     </tr>
 <?php endforeach; ?>
   </tbody>
