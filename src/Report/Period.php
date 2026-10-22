@@ -99,12 +99,6 @@ class Period
         return substr($this->to, 0, 10);
     }
 
-    /** Number of calendar days, both ends included. */
-    public function days(): int
-    {
-        return (int) round((strtotime($this->toDate()) - strtotime($this->fromDate())) / 86400) + 1;
-    }
-
     /**
      * The period of the same length right before this one. While this period is still running
      * (now inside it), the previous one is cut to the same elapsed time, so "today until 12:00"

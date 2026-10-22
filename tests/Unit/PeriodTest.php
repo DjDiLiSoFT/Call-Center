@@ -129,10 +129,4 @@ class PeriodTest extends TestCase
         $this->assertSame('0:05:09', Format::duration(309));
         $this->assertSame('0:00:00', Format::duration(0));
     }
-    public function test_days_counts_calendar_days_inclusive(): void
-    {
-        $this->assertSame(1, (new Period('custom', '2026-10-20', '2026-10-20'))->days());
-        $this->assertSame(4, (new Period('custom', '2026-10-18', '2026-10-21'))->days());
-        $this->assertSame(31, (new Period('custom', '2026-03-01', '2026-03-31'))->days());
-    }
 }

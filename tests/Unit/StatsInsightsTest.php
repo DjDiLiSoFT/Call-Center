@@ -7,10 +7,9 @@ use PHPUnit\Framework\TestCase;
 
 class StatsInsightsTest extends TestCase
 {
-    private function row(string $ext, int $answered, int $missed, ?float $pct, int $out = 0, int $offline = 0, ?int $lost = null): array
+    private function row(string $ext, int $answered, int $missed, ?float $pct, int $out = 0, int $offline = 0): array
     {
-        return ['extension' => $ext, 'name' => $ext, 'answered' => $answered, 'missed' => $missed,
-            'missed_lost' => $lost ?? $missed, 'missed_other' => $missed - ($lost ?? $missed), 'answer_pct' => $pct,
+        return ['extension' => $ext, 'name' => $ext, 'answered' => $answered, 'missed' => $missed, 'answer_pct' => $pct,
             'offline' => $offline, 'out_total' => $out, 'out_connected' => 0, 'talk_sec' => $answered * 60,
             'avg_talk_sec' => 60, 'avg_ring_sec' => 3, 'session_sec' => null, 'pause_sec' => null, 'pauses_by_reason' => []];
     }
@@ -57,18 +56,5 @@ class StatsInsightsTest extends TestCase
         $this->assertSame('warn', StatsInsights::pctLevel(80.0));
         $this->assertSame('bad', StatsInsights::pctLevel(79.9));
         $this->assertNull(StatsInsights::pctLevel(null));
-    }
-    public function test_missed_high_is_judged_on_lost_clients_only(): void
-    {
-        // 1001 missed a lot, but colleagues took those calls: only 1 client lost
-        $s = StatsInsights::build([
-            $this->row('1001', 100, 20, 83.3, 0, 0, 1),
-            $this->row('1002', 100, 6, 94.3, 0, 0, 6),
-            $this->row('1003', 100, 1, 99.0, 0, 0, 1),
-            $this->row('1004', 100, 1, 99.0, 0, 0, 1),
-        ], []);
-        $by = array_column($s['active'], null, 'extension');
-        $this->assertFalse($by['1001']['missed_high']);
-        $this->assertTrue($by['1002']['missed_high']);
     }
 }
