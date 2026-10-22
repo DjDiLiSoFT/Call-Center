@@ -10,7 +10,7 @@ namespace CallStats\Report;
 class StatsInsights
 {
     /** Previous-period values shown as ▲/▼ next to the current ones. */
-    public const COMPARED = ['answered', 'missed', 'answer_pct', 'talk_sec', 'avg_ring_sec'];
+    public const COMPARED = ['answered', 'missed', 'missed_lost', 'answer_pct', 'talk_sec', 'avg_ring_sec', 'busy_pct'];
 
     /**
      * @param array[] $rows OperatorStatsReport rows of the period

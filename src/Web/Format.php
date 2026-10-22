@@ -17,6 +17,16 @@ class Format
         return $sec === null ? '—' : self::duration((int) $sec);
     }
 
+    /** Short wait: 5 -> '0:05', 111 -> '1:51', 3723 -> '1:02:03', null -> '—'. */
+    public static function clock($sec): string
+    {
+        if ($sec === null) {
+            return '—';
+        }
+        $sec = max(0, (int) $sec);
+        return $sec >= 3600 ? self::duration($sec) : sprintf('%d:%02d', intdiv($sec, 60), $sec % 60);
+    }
+
     /** 2 -> '2 сек', 62 -> '01 мин, 02 сек', 3605 -> '1 ч, 00 мин, 05 сек'. */
     public static function humanDuration(int $sec): string
     {

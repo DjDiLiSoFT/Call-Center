@@ -11,6 +11,7 @@ use CallStats\Report\OperatorJournal;
 use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
+use CallStats\Report\QueueSummaryReport;
 use CallStats\Report\RecordingSearch;
 use CallStats\Report\StatsInsights;
 use CallStats\Web\RecordingLocator;
@@ -42,36 +43,135 @@ $app->route('dashboard', function (array $get, array $post) use ($app, $db, $ops
 
 $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): string {
     $now = time();
+    $maxDays = 92; // the client lists and callbacks load every lost call of the period
     $stats = new OperatorStatsReport($db, $ops);
-    $section = function (string $title, Period $p) use ($stats, $now): array {
-        $prev = $p->previous($now);
-        $report = $stats->fetch($p, null, [], $now);
-        return [
-            'title' => $title,
-            'period' => $p,
-            'report' => $report,
-            'insights' => StatsInsights::build($report['rows'], $stats->fetch($prev, null, [], $now)['rows']),
-            'prevLabel' => date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to)),
-        ];
+    $queue = new QueueSummaryReport($db);
+    $prevLabel = function (Period $prev): string {
+        return date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to));
     };
-    // No period chosen: today, yesterday and the current half of the month, one under another.
+    // No period chosen: today, yesterday and the current half of the month, one under another;
+    // the client summary is for today, the client lists for the half month.
     $default = !isset($get['preset']);
     if ($default) {
         $months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября',
             'октября', 'ноября', 'декабря'];
+        $today = Period::fromRequest(['preset' => 'today'], $now);
         $half = Period::fromRequest(['preset' => 'half_month'], $now);
-        $sections = [
-            $section('Сегодня', Period::fromRequest(['preset' => 'today'], $now)),
-            $section('Вчера', Period::fromRequest(['preset' => 'yesterday'], $now)),
-            $section('С ' . (int) date('j', strtotime($half->from)) . ' по ' . (int) date('j', strtotime($half->to)) . ' '
-                . $months[(int) date('n', strtotime($half->from)) - 1], $half),
+        $sectionPeriods = [
+            'Сегодня' => $today,
+            'Вчера' => Period::fromRequest(['preset' => 'yesterday'], $now),
+            'С ' . (int) date('j', strtotime($half->from)) . ' по ' . (int) date('j', strtotime($half->to)) . ' '
+                . $months[(int) date('n', strtotime($half->from)) - 1] => $half,
         ];
-        $period = Period::fromRequest([], $now);
+        $period = $today;
+        $summaryTitle = 'Сегодня';
+        $clientsPeriod = $half;
     } else {
         $period = Period::fromRequest($get, $now);
-        $sections = [$section(Period::PRESETS[$period->preset] ?? 'Период', $period)];
+        $summaryTitle = Period::PRESETS[$period->preset] ?? 'Период';
+        $sectionPeriods = [$summaryTitle => $period];
+        $clientsPeriod = $period;
     }
-    return $app->view()->render('stats', ['period' => $period, 'sections' => $sections, 'default' => $default]);
+    $summaryPrev = $period->previous($now);
+    $tooLong = $clientsPeriod->days() > $maxDays ? $maxDays : null;
+    $callbacks = $period->days() <= $maxDays;
+
+    // one callback batch for every period that needs it (they overlap or touch)
+    $need = [];
+    if ($callbacks) {
+        $need[] = $period;
+        if ($period->days() <= 31) {
+            $need[] = $summaryPrev;
+        }
+    }
+    if ($tooLong === null) {
+        $need[] = $clientsPeriod;
+    }
+    $lost = [];
+    if ($need) {
+        $cover = new Period('custom', $need[0]->fromDate(), $need[0]->toDate());
+        foreach ($need as $p) {
+            $cover->from = min($cover->from, $p->from);
+            $cover->to = max($cover->to, $p->to);
+        }
+        $lost = $queue->lostCalls($cover);
+    }
+    $s = $callbacks ? $queue->fetch($period, $lost) : $queue->summary($period);
+    $prev = $callbacks && $period->days() <= 31 ? $queue->fetch($summaryPrev, $lost) : $queue->summary($summaryPrev);
+
+    $sections = [];
+    foreach ($sectionPeriods as $title => $p) {
+        $pp = $p->previous($now);
+        $report = $stats->fetch($p, null, [], $now);
+        $sections[] = [
+            'title' => $title,
+            'period' => $p,
+            'report' => $report,
+            'insights' => StatsInsights::build($report['rows'], $stats->fetch($pp, null, [], $now)['rows']),
+            'prevLabel' => $prevLabel($pp),
+            'line' => $p === $period ? $s : $queue->summary($p),
+        ];
+    }
+    $notCalled = [];
+    if ($tooLong === null) {
+        foreach ($queue->fetch($clientsPeriod, $lost)['lost_calls'] as $it) {
+            if (($it['callback']['kind'] ?? 'none') === 'none') {
+                $notCalled[] = $it;
+            }
+        }
+    }
+    return $app->view()->render('stats', [
+        'period' => $period,
+        'default' => $default,
+        'names' => $ops->displayNames(),
+        'summary' => [
+            'title' => $summaryTitle,
+            'period' => $period,
+            's' => $s,
+            'prev' => $prev,
+            'prevLabel' => $prevLabel($summaryPrev),
+            'byHour' => $queue->byHour($period),
+            'waits' => $queue->waitBuckets($period),
+            // future days of a running period stay off the chart
+            'byDay' => $period->days() > 1 ? array_filter($queue->byDay($period), function (string $d) use ($now): bool {
+                return $d <= date('Y-m-d', $now);
+            }, ARRAY_FILTER_USE_KEY) : null,
+            'heatmap' => $period->days() >= 7 ? $queue->heatmap($period) : null,
+            'callbacks' => $callbacks,
+        ],
+        'sections' => $sections,
+        'clients' => [
+            'period' => $clientsPeriod,
+            'tooLong' => $tooLong,
+            'lost' => $notCalled,
+            'repeat' => $tooLong === null ? $queue->repeatCallers($clientsPeriod, 3, 20) : [],
+        ],
+    ]);
+});
+
+// Operator card: KPI tiles, per day, per hour (layout page under «Статистика»).
+$app->route('operator', function (array $get, array $post) use ($app, $db, $ops): string {
+    $now = time();
+    $names = $ops->displayNames();
+    $ext = isset($get['ext']) && is_string($get['ext']) ? trim($get['ext']) : '';
+    if (!isset($names[$ext])) {
+        http_response_code(404);
+        return '<p class="error">Оператор не найден</p><p><a href="?p=stats">← Статистика</a></p>';
+    }
+    $period = Period::fromRequest($get, $now);
+    $prev = $period->previous($now);
+    $stats = new OperatorStatsReport($db, $ops);
+    $row = $stats->fetch($period, null, [$ext], $now)['rows'][0] ?? null;
+    return $app->view()->render('operator', [
+        'period' => $period,
+        'ext' => $ext,
+        'name' => $names[$ext],
+        'row' => $row,
+        'prev' => $stats->fetch($prev, null, [$ext], $now)['rows'][0] ?? null,
+        'prevLabel' => date('d.m H:i', strtotime($prev->from)) . ' — ' . date('d.m H:i', strtotime($prev->to)),
+        'days' => $period->days() > 1 ? $stats->operatorByDay($period, $ext) : null,
+        'hours' => $stats->operatorByHour($period, $ext),
+    ]);
 });
 
 $monitorRoot = (string) $config->get('monitor.path', '/var/spool/asterisk/monitor');

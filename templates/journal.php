@@ -237,9 +237,5 @@ $cols = $all ? 6 : 5;
     'hidden' => $clean(array_merge($base, ['q' => $t['q'], 'sort' => $t['sort'], 'order' => $t['order']]))]) ?>
 </section>
 
-<div class="drawer-overlay" hidden></div>
-<aside class="drawer" role="dialog" aria-modal="true" aria-label="История номера" tabindex="-1" hidden>
-  <button type="button" class="drawer-close" aria-label="Закрыть" title="Закрыть (Esc)">✕</button>
-  <div class="drawer-body"></div>
-</aside>
+<?= $this->render('_client_drawer') ?>
 <?php endif; ?>

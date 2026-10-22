@@ -1,4 +1,5 @@
 <?php
+use CallStats\Web\Charts;
 use CallStats\Web\Format;
 use CallStats\Web\View;
 
@@ -6,15 +7,8 @@ use CallStats\Web\View;
 /** @var \CallStats\Report\Period $period */
 /** @var array $report OperatorStatsReport::fetch() */
 /** @var array $insights StatsInsights::build() */
-$tl = $report['hasTimeline'];
-$dur = function ($sec) {
-    return Format::durationOrDash($sec);
-};
-$pct = function ($v) {
-    return Format::pct($v);
-};
-$journal = function (string $ext) use ($period) {
-    return '?' . http_build_query(array_merge(['p' => 'journal', 'ext' => $ext], $period->query()));
+$card = function (string $ext) use ($period) {
+    return '?' . http_build_query(array_merge(['p' => 'operator', 'ext' => $ext], $period->query()));
 };
 $reasonTitle = function (array $r) {
     if (!$r) {
@@ -26,6 +20,7 @@ $reasonTitle = function (array $r) {
     }
     return implode("\n", $parts);
 };
+$cols = 13;
 ?>
 <?php if ($report['hasApprox']): ?>
 <p class="notice">часть данных за выбранный период приблизительная</p>
@@ -35,47 +30,33 @@ $reasonTitle = function (array $r) {
 <p class="muted">За выбранный период данных нет.</p>
 <?php else: ?>
 <div class="table-wrap">
-<table class="sortable">
+<table class="sortable ops-table">
   <thead>
     <tr>
-<?= $this->render('_stats_head', ['tl' => $tl, 'rank' => true]) ?>    </tr>
+<?= $this->render('_stats_head', ['rank' => true]) ?>    </tr>
   </thead>
   <tbody>
 <?php foreach ($insights['active'] as $r): ?>
     <tr>
-<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'rank' => true, 'link' => $journal($r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
+<?= $this->render('_stats_cells', ['r' => $r, 'rank' => true, 'link' => $card((string) $r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
 <?php endforeach; ?>
   </tbody>
 <?php if ($insights['inactive']): $n = count($insights['inactive']); ?>
   <tbody class="inactive-toggle">
-    <tr><td colspan="<?= $tl ? 12 : 10 ?>"><button type="button" class="linkish" data-toggle-inactive aria-expanded="false">▸ Ещё <?= $n ?> <?= \CallStats\Web\Charts::plural($n, 'оператор', 'оператора', 'операторов') ?> без звонков за период: <?= View::e(implode(', ', array_column($insights['inactive'], 'name'))) ?></button></td></tr>
+    <tr><td colspan="<?= $cols ?>"><button type="button" class="linkish" data-toggle-inactive aria-expanded="false">▸ Ещё <?= $n ?> <?= Charts::plural($n, 'оператор', 'оператора', 'операторов') ?> без звонков за период: <?= View::e(implode(', ', array_column($insights['inactive'], 'name'))) ?></button></td></tr>
   </tbody>
   <tbody class="inactive" hidden>
 <?php foreach ($insights['inactive'] as $r): ?>
     <tr>
       <td class="num rank">—</td>
-<?= $this->render('_stats_cells', ['r' => $r, 'tl' => $tl, 'link' => $journal($r['extension']), 'pauseTitle' => '']) ?>    </tr>
+<?= $this->render('_stats_cells', ['r' => $r, 'link' => $card((string) $r['extension']), 'pauseTitle' => $reasonTitle($r['pauses_by_reason'])]) ?>    </tr>
 <?php endforeach; ?>
   </tbody>
 <?php endif; ?>
-<?php $t = $report['total']; ?>
   <tfoot>
-    <tr>
+    <tr title="Сумма по операторам в таблице (без операторов без звонков)">
       <th></th>
-      <th>Итого</th>
-      <th class="num"><?= $t['answered'] ?></th>
-      <th class="num"><?= $t['missed'] ?></th>
-      <th class="num"><?= View::e($pct($t['answer_pct'])) ?></th>
-      <th class="num"><?= $t['offline'] ?></th>
-      <th class="num"><?= $t['out_connected'] ?> / <?= $t['out_total'] ?></th>
-      <th class="num"><?= View::e($dur($t['talk_sec'])) ?></th>
-      <th class="num"><?= View::e($dur($t['avg_talk_sec'])) ?></th>
-      <th class="num"><?= View::e($dur($t['avg_ring_sec'])) ?></th>
-<?php if ($tl): ?>
-      <th class="num"><?= View::e($dur($t['session_sec'])) ?></th>
-      <th class="num"<?= $t['pauses_by_reason'] ? ' title="' . View::e($reasonTitle($t['pauses_by_reason'])) . '"' : '' ?>><?= View::e($dur($t['pause_sec'])) ?></th>
-<?php endif; ?>
-    </tr>
+<?= $this->render('_stats_cells', ['r' => $report['total'], 'total' => true, 'link' => null, 'pauseTitle' => $reasonTitle($report['total']['pauses_by_reason'])]) ?>    </tr>
   </tfoot>
 </table>
 </div>

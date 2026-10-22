@@ -63,13 +63,14 @@
   });
 }());
 
-// Dashboard auto-refresh (only while the tab is visible).
+// Auto-refresh of dashboard / stats (only while the tab is visible).
 (function () {
   var el = document.querySelector('[data-autorefresh]');
   if (!el) { return; }
   var ms = (parseInt(el.getAttribute('data-autorefresh'), 10) || 60) * 1000;
   setInterval(function () {
-    if (document.visibilityState === 'visible') { window.location.reload(); }
+    // not while the client-history drawer is open: the reload would throw away what is being read
+    if (document.visibilityState === 'visible' && !document.body.classList.contains('drawer-open')) { window.location.reload(); }
   }, ms);
 }());
 
@@ -143,7 +144,7 @@ var initRowPlayers = (function () {
 }());
 initRowPlayers(document);
 
-// Journal: client history drawer. A number button (.js-client) loads ?p=client&number=… into it.
+// Client history drawer (journal, stats). A number button (.js-client) loads ?p=client&number=… into it.
 (function () {
   var drawer = document.querySelector('.drawer');
   var overlay = document.querySelector('.drawer-overlay');

@@ -19,6 +19,9 @@ class App
     /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
     private const RAW = ['play', 'live_data', 'client', 'journal_csv'];
 
+    /** Layout pages that are not menu items: page => [title, menu item to highlight]. */
+    private const PAGES = ['operator' => ['Оператор', 'stats']];
+
     /** @var Config */
     private $config;
     /** @var PDO */
@@ -117,6 +120,12 @@ class App
                 ? (string) call_user_func($this->routes[$page], $get, $post)
                 : '<p class="muted">Раздел в разработке</p>';
             echo $this->layout(self::MENU[$page], $body, $page);
+            return;
+        }
+
+        if (isset(self::PAGES[$page]) && isset($this->routes[$page])) {
+            $body = (string) call_user_func($this->routes[$page], $get, $post);
+            echo $this->layout(self::PAGES[$page][0], $body, self::PAGES[$page][1]);
             return;
         }
 
