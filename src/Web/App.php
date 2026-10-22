@@ -17,7 +17,7 @@ class App
     ];
 
     /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
-    private const RAW = ['play', 'live_data', 'client', 'journal_csv'];
+    private const RAW = ['play', 'live_data', 'client', 'journal_csv', 'stats_csv'];
 
     /** Layout pages that are not menu items: page => [title, menu item to highlight]. */
     private const PAGES = ['operator' => ['Оператор', 'stats']];
