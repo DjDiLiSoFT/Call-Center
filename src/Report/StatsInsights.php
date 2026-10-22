@@ -26,8 +26,7 @@ class StatsInsights
         $active = [];
         $inactive = [];
         foreach ($rows as $r) {
-            $calls = (int) $r['answered'] + (int) $r['missed'] + (int) $r['out_total'];
-            if ($calls > 0 || (int) ($r['session_sec'] ?? 0) > 0) {
+            if (self::isActive($r)) {
                 $active[] = $r;
             } else {
                 $inactive[] = $r;
@@ -53,6 +52,12 @@ class StatsInsights
         unset($r);
 
         return ['active' => $active, 'inactive' => $inactive, 'avg_missed' => $avgMissed];
+    }
+
+    /** An operator with any call (offline rings do not count) or a queue session in the period. */
+    public static function isActive(array $r): bool
+    {
+        return (int) $r['answered'] + (int) $r['missed'] + (int) $r['out_total'] > 0 || (int) ($r['session_sec'] ?? 0) > 0;
     }
 
     /** Answer rate level: good >= 90%, warn >= 80%, bad below, null when there were no calls. */

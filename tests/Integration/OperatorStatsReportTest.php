@@ -25,9 +25,10 @@ class OperatorStatsReportTest extends DbTestCase
     }
 
     /** @param AgentOutcome[] $agents */
-    private function call(string $key, string $kind, ?string $queue, string $start, array $agents, bool $approx = false): void
+    private function call(string $key, string $kind, ?string $queue, string $start, array $agents, bool $approx = false, ?string $answeredBy = null): void
     {
         $c = new CallRecord();
+        $c->answeredBy = $answeredBy;
         $c->callKey = $key;
         $c->kind = $kind;
         $c->queue = $queue;
@@ -196,5 +197,114 @@ class OperatorStatsReportTest extends DbTestCase
         $ins->execute(['1004', '1001', '2026-10-18 10:00:00', '2026-10-18 12:00:00']);
         $by = $this->rowsBy($this->report()->fetch($this->period(), '1000', [], strtotime(self::NOW)));
         $this->assertSame(3600, $by['1004']['session_sec']);
+    }
+
+    public function test_missed_split_into_client_lost_and_taken_by_colleague(): void
+    {
+        // nobody answered: a lost client for both operators
+        $this->call('m1', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1001', 'in', 'missed', 15, 0, '2026-10-18 10:00:00', null),
+            new AgentOutcome('1002', 'in', 'missed', 15, 0, '2026-10-18 10:00:00', null),
+        ]);
+        // 1001 let it ring out, then 1002 took it on the next round
+        $this->call('m2', 'queue', '1000', '2026-10-18 11:00:00', [
+            new AgentOutcome('1001', 'in', 'missed', 15, 0, '2026-10-18 11:00:00', null),
+            new AgentOutcome('1002', 'in', 'answered', 3, 40, '2026-10-18 11:00:20', '2026-10-18 11:00:23'),
+        ], false, '1002');
+        $res = $this->report()->fetch($this->period(), null, [], strtotime(self::NOW));
+        $by = $this->rowsBy($res);
+        $this->assertSame(2, $by['1001']['missed']);
+        $this->assertSame(1, $by['1001']['missed_lost']);
+        $this->assertSame(1, $by['1001']['missed_other']);
+        $this->assertSame(1, $by['1002']['missed_lost']);
+        $this->assertSame(0, $by['1002']['missed_other']);
+        $this->assertEquals(0.0, $by['1001']['answer_pct']);
+        $this->assertSame(2, $res['total']['missed_lost']);
+        $this->assertSame(1, $res['total']['missed_other']);
+    }
+
+    public function test_busy_falls_back_to_the_active_span_of_each_day(): void
+    {
+        $period = Period::fromRequest(['preset' => 'custom', 'from' => '2026-10-18', 'to' => '2026-10-19'], strtotime(self::NOW));
+        // day 1: 10:00 .. 10:10 (first ring .. end of the last talk), 115 s of talk
+        $this->call('b1', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1001', 'in', 'answered', 5, 60, '2026-10-18 10:00:00', '2026-10-18 10:00:05'),
+        ], false, '1001');
+        $this->call('b2', 'outbound', null, '2026-10-18 10:08:00', [
+            new AgentOutcome('1001', 'out', 'answered', 5, 55, '2026-10-18 10:08:00', '2026-10-18 10:09:05'),
+        ]);
+        // offline rings do not count as presence
+        $this->call('b3', 'queue', '1000', '2026-10-18 18:00:00', [
+            new AgentOutcome('1001', 'in', 'offline', 0, 0, '2026-10-18 18:00:00', null),
+        ]);
+        // day 2: 09:00 .. 09:05 (a missed ring of 20 s from 09:04:40)
+        $this->call('b4', 'queue', '1000', '2026-10-19 09:00:00', [
+            new AgentOutcome('1001', 'in', 'answered', 0, 65, '2026-10-19 09:00:00', '2026-10-19 09:00:00'),
+        ], false, '1001');
+        $this->call('b5', 'queue', '1000', '2026-10-19 09:04:40', [
+            new AgentOutcome('1001', 'in', 'missed', 20, 0, '2026-10-19 09:04:40', null),
+        ]);
+        $res = $this->report()->fetch($period, null, [], strtotime('2026-10-19 20:00:00'));
+        $r = $this->rowsBy($res)['1001'];
+        $this->assertSame(600 + 300, $r['active_span_sec']);
+        $this->assertTrue($r['busy_approx']);
+        $this->assertSame(900, $r['work_sec']);
+        $this->assertSame(20.0, $r['busy_pct']);                    // 180 s talk / 900 s
+        $this->assertSame(12.0, $r['calls_per_hour']);              // 2 answered + 1 out in 0.25 h
+        $this->assertTrue($res['total']['busy_approx']);
+        $this->assertSame(20.0, $res['total']['busy_pct']);
+    }
+
+    public function test_busy_uses_the_session_minus_pauses_when_known(): void
+    {
+        $this->call('s1', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'in', 'answered', 5, 1800, '2026-10-18 10:00:00', '2026-10-18 10:00:05'),
+        ], false, '1004');
+        $this->db->exec("INSERT INTO agent_sessions (extension, queue, start_at, end_at) VALUES ('1004', '1000', '2026-10-18 09:00:00', '2026-10-18 11:00:00')");
+        $this->db->exec("INSERT INTO agent_pauses (extension, queue, start_at, end_at, reason) VALUES ('1004', '1000', '2026-10-18 09:00:00', '2026-10-18 10:00:00', 'Обед')");
+        $r = $this->rowsBy($this->report()->fetch($this->period(), null, [], strtotime(self::NOW)))['1004'];
+        $this->assertFalse($r['busy_approx']);
+        $this->assertSame(3600, $r['work_sec']);
+        $this->assertSame(50.0, $r['busy_pct']);
+        $this->assertSame(1.0, $r['calls_per_hour']);
+    }
+
+    public function test_one_operator_by_day_and_by_hour(): void
+    {
+        $this->seed();
+        $this->call('d1', 'queue', '1000', '2026-10-19 09:10:00', [
+            new AgentOutcome('1004', 'in', 'missed', 15, 0, '2026-10-19 09:10:00', null),
+        ]);
+        $this->call('d2', 'queue', '1000', '2026-10-19 09:20:00', [
+            new AgentOutcome('1004', 'in', 'answered', 2, 50, '2026-10-19 09:20:00', '2026-10-19 09:20:02'),
+        ], false, '1004');
+        $period = Period::fromRequest(['preset' => 'custom', 'from' => '2026-10-18', 'to' => '2026-10-19'], strtotime(self::NOW));
+        $days = $this->report()->operatorByDay($period, '1004');
+        $this->assertSame(['2026-10-18', '2026-10-19'], array_keys($days));
+        $this->assertSame(['answered' => 1, 'missed' => 0, 'out' => 2, 'talk_sec' => 130, 'avg_talk_sec' => 30, 'answer_pct' => 100.0],
+            $days['2026-10-18']);
+        $this->assertSame(['answered' => 1, 'missed' => 1, 'out' => 0, 'talk_sec' => 50, 'avg_talk_sec' => 50, 'answer_pct' => 50.0],
+            $days['2026-10-19']);
+        $this->assertSame([9 => ['answered' => 1, 'missed' => 1], 15 => ['answered' => 1, 'missed' => 0]],
+            $this->report()->operatorByHour($period, '1004'));
+    }
+
+    public function test_total_sums_only_operators_shown_as_active(): void
+    {
+        $this->seed();
+        $this->call('k9', 'queue', '1000', '2026-10-18 10:00:00', [
+            new AgentOutcome('1004', 'in', 'offline', 0, 0, '2026-10-18 10:00:00', null),
+            new AgentOutcome('1005', 'in', 'offline', 0, 0, '2026-10-18 10:00:00', null),
+        ]);
+        // 1005 has only offline rings: hidden in the inactive group, so not in Итого
+        $res = $this->report()->fetch($this->period(), null, [], strtotime(self::NOW));
+        $by = $this->rowsBy($res);
+        $this->assertSame(2, $by['1005']['offline']);
+        $this->assertSame(1, $res['total']['offline']);
+        $active = array_values(array_filter($res['rows'], [\CallStats\Report\StatsInsights::class, 'isActive']));
+        $this->assertSame(['1004'], array_map('strval', array_column($active, 'extension')));
+        foreach (['answered', 'missed', 'offline', 'out_total', 'talk_sec'] as $k) {
+            $this->assertSame(array_sum(array_column($active, $k)), $res['total'][$k], $k);
+        }
     }
 }
