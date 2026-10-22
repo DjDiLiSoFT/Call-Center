@@ -115,4 +115,33 @@ class JournalTableTest extends TestCase
         $this->assertSame('1001', $rows[0]['ext']);
         $this->assertSame('callback', $rows[0]['callback']['kind']);
     }
+
+    public function test_rows_carry_result_and_source_for_export(): void
+    {
+        $rows = JournalTable::rows([
+            $this->item('2026-10-20 09:00:00', 'in_answered', ['client' => '1', 'source' => 'Прямой', 'talk_sec' => 10]),
+            $this->item('2026-10-20 09:05:00', 'in_missed', ['client' => '2', 'source' => 'Очередь «A»']),
+            $this->item('2026-10-20 09:06:00', 'out', ['client' => '5', 'reason' => 'not_connected', 'source' => 'Исходящий']),
+            $this->item('2026-10-20 09:07:00', 'pause', ['until' => null, 'reason' => 'Обед']),
+        ]);
+        $this->assertSame(['принят', 'пропущен', 'не состоялся', 'Пауза: Обед (не завершена)'], array_column($rows, 'result'));
+        $this->assertSame(['Прямой', 'Очередь «A»', 'Исходящий', ''], array_column($rows, 'source'));
+    }
+
+    public function test_callback_badge_and_after_text(): void
+    {
+        $this->assertSame('через 40 сек', Format::after(40));
+        $this->assertSame('через 5 мин', Format::after(330));
+        $this->assertSame('через 2 ч 10 мин', Format::after(7800));
+        $this->assertSame('через 3 ч', Format::after(10800));
+        $names = ['1002' => 'Иван', '1004' => '1004'];
+        $this->assertSame(['✓ перезвонил Иван через 5 мин', 'ok'],
+            Format::callback(['kind' => 'callback', 'after_sec' => 300, 'ext' => '1002', 'connected' => true], $names));
+        $this->assertSame(['✓ перезвонил 1003 через 40 сек, не дозвонился', 'ok'],
+            Format::callback(['kind' => 'callback', 'after_sec' => 40, 'ext' => '1003', 'connected' => false], $names));
+        $this->assertSame(['✓ клиент дозвонился сам через 12 мин (1004)', 'ok'],
+            Format::callback(['kind' => 'got_through', 'after_sec' => 720, 'ext' => '1004', 'connected' => true], $names));
+        $this->assertSame(['✗ не перезвонили', 'bad'],
+            Format::callback(['kind' => 'none', 'after_sec' => null, 'ext' => null, 'connected' => null], $names));
+    }
 }

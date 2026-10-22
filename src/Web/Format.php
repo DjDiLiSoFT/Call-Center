@@ -41,6 +41,41 @@ class Format
             . ' ' . date('Y', $t) . ' г., ' . date('H:i', $t);
     }
 
+    /** 40 -> 'через 40 сек', 330 -> 'через 5 мин', 7800 -> 'через 2 ч 10 мин'. */
+    public static function after(int $sec): string
+    {
+        $sec = max(0, $sec);
+        if ($sec < 60) {
+            return 'через ' . $sec . ' сек';
+        }
+        if ($sec < 3600) {
+            return 'через ' . intdiv($sec, 60) . ' мин';
+        }
+        $m = intdiv($sec % 3600, 60);
+        return 'через ' . intdiv($sec, 3600) . ' ч' . ($m > 0 ? ' ' . $m . ' мин' : '');
+    }
+
+    /**
+     * Badge of OperatorJournal::withCallbacks() data: [text, 'ok'|'bad'].
+     *
+     * @param array<string,string> $names extension => display name
+     */
+    public static function callback(array $cb, array $names): array
+    {
+        $who = function ($ext) use ($names): string {
+            $ext = (string) $ext;
+            return isset($names[$ext]) && $names[$ext] !== '' ? $names[$ext] : $ext;
+        };
+        switch ($cb['kind'] ?? 'none') {
+            case 'callback':
+                return ['✓ перезвонил ' . $who($cb['ext']) . ' ' . self::after((int) $cb['after_sec'])
+                    . ($cb['connected'] === false ? ', не дозвонился' : ''), 'ok'];
+            case 'got_through':
+                return ['✓ клиент дозвонился сам ' . self::after((int) $cb['after_sec']) . ' (' . $who($cb['ext']) . ')', 'ok'];
+        }
+        return ['✗ не перезвонили', 'bad'];
+    }
+
     /** 93.9 -> '93,9%', 100.0 -> '100%', null -> '—'. */
     public static function pct($v): string
     {

@@ -5,6 +5,7 @@ use CallStats\Db;
 use CallStats\Live\AmiClient;
 use CallStats\Live\LiveSnapshot;
 use CallStats\Report\DashboardReport;
+use CallStats\Report\DayTimeline;
 use CallStats\Report\JournalTable;
 use CallStats\Report\OperatorJournal;
 use CallStats\Report\TodayStats;
@@ -16,6 +17,8 @@ use CallStats\Web\RecordingLocator;
 use CallStats\Web\RecordingStreamer;
 use CallStats\Store\OperatorRepository;
 use CallStats\Web\App;
+use CallStats\Web\Csv;
+use CallStats\Web\Format;
 
 $config = require __DIR__ . '/../src/bootstrap.php';
 
@@ -74,42 +77,115 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
 $monitorRoot = (string) $config->get('monitor.path', '/var/spool/asterisk/monitor');
 $locator = new RecordingLocator($monitorRoot);
 
-$app->route('journal', function (array $get, array $post) use ($app, $db, $ops, $locator): string {
-    $period = Period::fromRequest($get, time());
-    $operators = [];
-    foreach ($ops->all() as $o) {
-        $operators[(string) $o['extension']] = $ops->displayName((string) $o['extension']);
-    }
-    $ext = isset($get['ext']) && is_string($get['ext']) && isset($operators[$get['ext']]) ? $get['ext'] : '';
-    $summary = null;
-    $hasTimeline = false;
-    $items = [];
-    if ($ext !== '') {
-        $report = (new OperatorStatsReport($db, $ops))->fetch($period, null, [$ext]);
-        $summary = $report['rows'][0] ?? null;
-        $hasTimeline = $report['hasTimeline'];
-        $items = OperatorJournal::collapseOffline((new OperatorJournal($db))->fetch($ext, $period));
-        $items = (new OperatorJournal($db))->withRecordingStatus($items, $locator);
-    }
+// Journal data shared by the page and its CSV export: params validated, rows filtered (not paged).
+$journalData = function (array $get) use ($db, $ops, $locator): array {
+    $now = time();
+    $period = Period::fromRequest($get, $now);
+    $operators = $ops->displayNames();
     $str = function (string $k) use ($get): string {
         return isset($get[$k]) && is_string($get[$k]) ? trim($get[$k]) : '';
     };
+    $ext = $str('ext');
+    if ($ext !== '*' && !isset($operators[$ext])) {
+        $ext = '';
+    }
     $t = [
         'q' => mb_substr($str('q'), 0, 40),
+        'type' => in_array($str('type'), JournalTable::CATS, true) ? $str('type') : '',
+        'noise' => $str('noise') === '1' ? '1' : '',
         'sort' => $str('sort') === 'dur' ? 'dur' : 'at',
         'order' => $str('order') === 'asc' ? 'asc' : 'desc',
         'per' => in_array((int) $str('per'), JournalTable::PER_PAGE, true) ? (int) $str('per') : 100,
     ];
-    $page = ctype_digit($str('page')) ? (int) min((int) $str('page'), 1000000) : 1;
-    $table = JournalTable::apply(JournalTable::rows($items), $t['q'], $t['sort'], $t['order'], $page, $t['per']);
-    return $app->view()->render('journal', [
+    $items = [];
+    $kpi = null;
+    $kpiPrev = null;
+    $timeline = null;
+    if ($ext !== '') {
+        $journal = new OperatorJournal($db);
+        $stats = new OperatorStatsReport($db, $ops);
+        $exts = $ext === '*' ? [] : [$ext];
+        $report = $stats->fetch($period, null, $exts, $now);
+        $prevReport = $stats->fetch($period->previous($now), null, $exts, $now);
+        if ($ext === '*') {
+            $items = $journal->fetchAll($period, array_keys($operators), true);
+            $kpi = $report['total'];
+            $kpiPrev = $prevReport['total'];
+        } else {
+            $items = OperatorJournal::collapseOffline($journal->fetch($ext, $period));
+            $kpi = $report['rows'][0] ?? null;
+            $kpiPrev = $prevReport['rows'][0] ?? null;
+            if ($period->fromDate() === $period->toDate()) {
+                $timeline = DayTimeline::build($items, $period->fromDate(), $now);
+            }
+        }
+        $items = $journal->withRecordingStatus($journal->withCallbacks($items), $locator);
+    }
+    $searched = JournalTable::search(JournalTable::rows($items), $t['q']);
+    $filtered = JournalTable::filterType($searched, $t['type'], $t['noise'] === '1');
+    return [
         'period' => $period,
         'operators' => $operators,
         'ext' => $ext,
-        'summary' => $summary,
-        'hasTimeline' => $hasTimeline,
-        'table' => $table,
         't' => $t,
+        'kpi' => $kpi,
+        'kpiPrev' => $kpiPrev,
+        'timeline' => $timeline,
+        'counts' => JournalTable::counts($searched),
+        'allCount' => count(JournalTable::filterType($searched, '', $t['noise'] === '1')),
+        'rows' => $filtered,
+        'days' => JournalTable::days($filtered),
+    ];
+};
+
+$app->route('journal', function (array $get, array $post) use ($app, $journalData): string {
+    $d = $journalData($get);
+    $page = isset($get['page']) && is_string($get['page']) && ctype_digit($get['page']) ? (int) min((int) $get['page'], 1000000) : 1;
+    // the search has already been applied by $journalData
+    $d['table'] = JournalTable::apply($d['rows'], '', $d['t']['sort'], $d['t']['order'], $page, $d['t']['per']);
+    unset($d['rows']);
+    return $app->view()->render('journal', $d);
+});
+
+// Raw response: the filtered journal (all pages) as CSV for Excel.
+$app->route('journal_csv', function (array $get, array $post) use ($journalData): string {
+    $d = $journalData($get);
+    $res = JournalTable::apply($d['rows'], '', $d['t']['sort'], $d['t']['order'], 1, max(1, count($d['rows'])));
+    $names = $d['operators'];
+    $dirs = ['in' => 'входящий', 'out' => 'исходящий', 'internal' => 'внутренний', 'event' => 'событие'];
+    $out = [];
+    foreach ($res['rows'] as $r) {
+        $opExt = $d['ext'] === '*' ? (string) $r['ext'] : $d['ext'];
+        $out[] = [
+            $r['at'],
+            $opExt === '' ? '' : (($names[$opExt] ?? $opExt) !== $opExt ? $names[$opExt] . ' (' . $opExt . ')' : $opExt),
+            $dirs[$r['dir']],
+            $r['number'],
+            $r['result'],
+            $r['duration'] === null ? '' : (int) $r['duration'],
+            $r['source'],
+            $r['callback'] === null ? '' : Format::callback($r['callback'], $names)[0],
+        ];
+    }
+    $file = 'journal-' . ($d['ext'] === '*' ? 'all' : preg_replace('/[^A-Za-z0-9_-]/', '', $d['ext']))
+        . '-' . $d['period']->fromDate() . '-' . $d['period']->toDate() . '.csv';
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $file . '"');
+    return Csv::build(['Дата', 'Оператор', 'Направление', 'Номер', 'Результат', 'Длительность, сек', 'Источник', 'Перезвон'], $out);
+});
+
+// Raw response: HTML fragment with the call history of one client number (journal drawer).
+$app->route('client', function (array $get, array $post) use ($app, $db, $ops, $locator): string {
+    $number = isset($get['number']) && is_string($get['number']) ? mb_substr(trim($get['number']), 0, 40) : '';
+    if (OperatorJournal::normalizeNumber($number) === '') {
+        http_response_code(400);
+        return '<p class="error">Неверный номер</p>';
+    }
+    $journal = new OperatorJournal($db);
+    return $app->view()->render('_client_history', [
+        'number' => $number,
+        'calls' => $journal->withRecordingStatus($journal->clientHistory($number, 100), $locator),
+        'names' => $ops->displayNames(),
     ]);
 });
 

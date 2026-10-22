@@ -17,7 +17,7 @@ class App
     ];
 
     /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
-    private const RAW = ['play', 'live_data'];
+    private const RAW = ['play', 'live_data', 'client', 'journal_csv'];
 
     /** @var Config */
     private $config;

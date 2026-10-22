@@ -28,6 +28,12 @@ class JournalTable
         'in_offline' => 'offline', 'offline_group' => 'offline', 'out' => 'out', 'internal' => 'internal',
     ];
 
+    /** Short result of a call row (CSV «Результат»); events use their text. */
+    private const RESULT = [
+        'in_answered' => 'принят', 'in_missed' => 'пропущен', 'in_other' => 'взял другой',
+        'in_caller_hangup' => 'клиент положил трубку', 'in_offline' => 'телефон не в сети',
+    ];
+
     /** @return array<string,int> category => rows, in CATS order, absent categories omitted */
     public static function counts(array $rows): array
     {
@@ -85,7 +91,7 @@ class JournalTable
             'call_id' => $it['call_id'] ?? null,
             'rec_status' => !empty($it['has_recording']) ? (string) ($it['rec_status'] ?? 'missing') : '',
             'approx' => !empty($it['approx']), 'sources' => $it['sources'] ?? null, 'items' => $it['items'] ?? [],
-            'cat' => self::CAT_OF[$t] ?? 'event', 'ext' => $it['ext'] ?? null, 'callback' => $it['callback'] ?? null,
+            'cat' => self::CAT_OF[$t] ?? 'event', 'source' => $src, 'result' => '', 'ext' => $it['ext'] ?? null, 'callback' => $it['callback'] ?? null,
         ];
         $ring = ($it['ring_sec'] ?? null) === null ? null : (int) $it['ring_sec'];
         $talk = ($it['talk_sec'] ?? null) === null ? null : (int) $it['talk_sec'];
@@ -160,10 +166,24 @@ class JournalTable
                 $r['muted'] = true;
                 break;
         }
+        $r['result'] = self::RESULT[$t] ?? ($t === 'out' ? ($r['failed'] ? 'не состоялся' : 'состоялся')
+            : ($t === 'internal' ? $r['note'] : $r['text']));
         if ($r['failed']) {
             $r['rec_status'] = ''; // the operator did not talk: any recording is someone else's conversation
         }
         return $r;
+    }
+
+    /** Rows whose number / text / note contain $q (case-insensitive); '' keeps all. */
+    public static function search(array $rows, string $q): array
+    {
+        $q = trim($q);
+        if ($q === '') {
+            return $rows;
+        }
+        return array_values(array_filter($rows, function (array $r) use ($q): bool {
+            return mb_stripos($r['number'] . ' ' . $r['text'] . ' ' . $r['note'], $q) !== false;
+        }));
     }
 
     /**
@@ -172,12 +192,7 @@ class JournalTable
      */
     public static function apply(array $rows, string $q, string $sort, string $order, int $page, int $perPage): array
     {
-        $q = trim($q);
-        if ($q !== '') {
-            $rows = array_values(array_filter($rows, function (array $r) use ($q): bool {
-                return mb_stripos($r['number'] . ' ' . $r['text'] . ' ' . $r['note'], $q) !== false;
-            }));
-        }
+        $rows = self::search($rows, $q);
         $key = $sort === 'dur' ? 'duration' : 'at';
         $dir = $order === 'asc' ? 1 : -1;
         $idx = array_keys($rows);
