@@ -1,14 +1,10 @@
 <?php
 
-use CallStats\Build\AgentResolver;
 use CallStats\Db;
-use CallStats\Live\AmiClient;
-use CallStats\Live\LiveSnapshot;
 use CallStats\Report\DashboardReport;
 use CallStats\Report\DayTimeline;
 use CallStats\Report\JournalTable;
 use CallStats\Report\OperatorJournal;
-use CallStats\Report\TodayStats;
 use CallStats\Report\OperatorStatsReport;
 use CallStats\Report\Period;
 use CallStats\Report\QueueSummaryReport;
@@ -143,7 +139,7 @@ $app->route('stats', function (array $get, array $post) use ($app, $db, $ops): s
         'clients' => [
             'period' => $clientsPeriod,
             'tooLong' => $tooLong,
-            'lost' => $notCalled,
+            'lost' => QueueSummaryReport::groupLostByNumber($notCalled),
             'repeat' => $tooLong === null ? $queue->repeatCallers($clientsPeriod, 3, 20) : [],
         ],
     ]);
@@ -448,119 +444,6 @@ $app->route('play', function (array $get, array $post) use ($db, $locator): stri
         header($line);
     }))->send($loc['path'], $loc['mime'] ?? 'application/octet-stream', $range, $download);
     return '';
-});
-
-$app->route('live', function (array $get, array $post) use ($app, $config): string {
-    return $app->view()->render('live', [
-        'refreshSec' => max(2, (int) $config->get('live.refresh_sec', 3)),
-        'slSec' => (int) $config->get('live.service_level_sec', 60),
-    ]);
-});
-
-// Raw response: JSON for the live board (polled by assets/live.js).
-$app->route('live_data', function (array $get, array $post) use ($config, $db, $ops): string {
-    if (session_status() === PHP_SESSION_ACTIVE) {
-        session_write_close(); // polling must not block other pages
-    }
-    header('Content-Type: application/json; charset=utf-8');
-    $now = time();
-    $out = ['ok' => true, 'error' => null, 'time' => date('H:i:s', $now), 'today' => null,
-        'summary' => null, 'queues' => [], 'agents' => []];
-    $json = function (array $out): string {
-        // Caller names from trunks may be non-UTF-8 (e.g. cp1251): substitute, never fail.
-        $s = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-        if ($s === false) {
-            error_log('callstats live: json_encode failed: ' . json_last_error_msg());
-            $s = (string) json_encode(['ok' => false, 'error' => 'Ошибка формирования данных', 'time' => $out['time'],
-                'today' => null, 'summary' => null, 'queues' => [], 'agents' => []], JSON_UNESCAPED_UNICODE);
-        }
-        return $s;
-    };
-    try {
-        $names = $ops->displayNames();
-        $queueNames = [];
-        foreach ($db->query('SELECT queue, name FROM queues')->fetchAll(PDO::FETCH_ASSOC) as $q) {
-            $queueNames[(string) $q['queue']] = (string) $q['name'];
-        }
-        $out['today'] = (new TodayStats($db))->fetch(
-            date('Y-m-d 00:00:00', $now),
-            date('Y-m-d 23:59:59', $now),
-            (int) $config->get('live.service_level_sec', 60)
-        );
-    } catch (Throwable $e) {
-        error_log('callstats live: ' . $e->getMessage());
-        $out['ok'] = false;
-        $out['error'] = 'Ошибка базы данных сервиса';
-        return $json($out);
-    }
-    try {
-        $user = (string) $config->get('ami.user', '');
-        if ($user === '') {
-            throw new RuntimeException('AMI не настроен (ami.user в config.php)');
-        }
-        $ami = new AmiClient(
-            (string) $config->get('ami.host', '127.0.0.1'),
-            (int) $config->get('ami.port', 5038),
-            $user,
-            (string) $config->get('ami.secret', ''),
-            3.0
-        );
-        $ami->connect();
-        try {
-            // Each list is optional: e.g. without app_queue QueueStatus errors, the rest still works.
-            $failed = [];
-            $list = function (string $action) use ($ami, &$failed): array {
-                try {
-                    return $ami->request($action);
-                } catch (RuntimeException $e) {
-                    error_log('callstats live: ' . $e->getMessage());
-                    $failed[] = $e->getMessage();
-                    return [];
-                }
-            };
-            $queue = $list('QueueStatus');
-            $channels = $list('CoreShowChannels');
-            $hints = $list('ExtensionStateList');
-            if (count($failed) === 3) {
-                throw new RuntimeException($failed[0]);
-            }
-            if ($failed) {
-                $out['error'] = 'Часть данных Asterisk недоступна: ' . implode('; ', $failed);
-            }
-        } finally {
-            $ami->close();
-        }
-        $snap = (new LiveSnapshot(new AgentResolver(array_keys($names))))
-            ->build($queue, $channels, $hints, $names, $queueNames);
-        $out['summary'] = $snap['summary'];
-        $out['queues'] = $snap['queues'];
-        $out['agents'] = $snap['agents'];
-    } catch (Throwable $e) {
-        error_log('callstats live: ' . $e->getMessage());
-        $out['ok'] = false;
-        $out['error'] = 'Нет связи с Asterisk: ' . $e->getMessage();
-    }
-    return $json($out);
-});
-
-$app->route('operators', function (array $get, array $post) use ($app, $ops): string {
-    if ($post) {
-        $ext = isset($post['ext']) && is_string($post['ext']) ? $post['ext'] : '';
-        $name = isset($post['custom_name']) && is_string($post['custom_name']) ? $post['custom_name'] : '';
-        foreach ($ops->all() as $o) {
-            if ((string) $o['extension'] === $ext) {
-                $ops->setName($ext, $name);
-                break;
-            }
-        }
-        header('Location: ?p=operators&saved=1', true, 303);
-        exit;
-    }
-    return $app->view()->render('operators', [
-        'operators' => $ops->all(),
-        'csrf' => $app->csrf()->token(),
-        'saved' => isset($get['saved']),
-    ]);
 });
 
 $app->handle($_GET, $_POST, $_SERVER);

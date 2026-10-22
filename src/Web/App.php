@@ -10,14 +10,12 @@ class App
     private const MENU = [
         'dashboard' => 'Дашборд',
         'stats' => 'Статистика',
-        'live' => 'Онлайн',
         'journal' => 'Журнал',
         'recordings' => 'Записи',
-        'operators' => 'Операторы',
     ];
 
     /** Routes whose handler returns the whole response body (no layout); anonymous → 403. */
-    private const RAW = ['play', 'live_data', 'client', 'journal_csv', 'stats_csv'];
+    private const RAW = ['play', 'client', 'journal_csv', 'stats_csv'];
 
     /** Layout pages that are not menu items: page => [title, menu item to highlight]. */
     private const PAGES = ['operator' => ['Оператор', 'stats']];
@@ -44,7 +42,7 @@ class App
 
     /**
      * Registers a page handler. For menu pages it returns the HTML of the page body (rendered
-     * inside the layout); for RAW routes (play, live_data) it returns the full response body and
+     * inside the layout); for RAW routes (play, client, *_csv) it returns the full response body and
      * may send its own headers.
      */
     public function route(string $page, callable $handler): self
